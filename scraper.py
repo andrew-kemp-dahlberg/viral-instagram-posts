@@ -25,30 +25,76 @@ class TwitterTrendingScraper:
         """
         self.client = ApifyClient(api_token)
     
-    def search_trending_tweets(self, topics, max_tweets=50, search_type="Top"):
+    def search_trending_tweets(self, topics, max_tweets=50, search_type="Top",
+                              min_likes=200, min_replies=20, min_retweets=50,
+                              time_range="1 day", language="en", custom_params=None):
         """
-        Search for trending tweets on specific topics.
-        
+        Search for trending tweets on specific topics with advanced filtering.
+
         Args:
             topics (list): List of topics/keywords to search for
             max_tweets (int): Maximum number of tweets to retrieve per topic
             search_type (str): "Top" for trending/popular tweets, "Latest" for most recent
-            
+            min_likes (int): Minimum number of likes required
+            min_replies (int): Minimum number of replies required
+            min_retweets (int): Minimum number of retweets required
+            time_range (str): Time range for tweets (e.g., "1 day", "7 days", "30 days")
+            language (str): Language code (e.g., "en" for English)
+            custom_params (dict): Optional dictionary to override any default parameters
+
         Returns:
             dict: Dictionary with topics as keys and tweet data as values
         """
         all_results = {}
-        
+
         for topic in topics:
             print(f"\n🔍 Searching for trending tweets about: {topic}")
-            
+
             # Prepare the search input for web.harvester/easy-twitter-search-scraper
             # This actor works without authentication
             run_input = {
                 "searchQueries": [topic],
-                "maxTweets": max_tweets,
-                "searchType": search_type,  # "Top" or "Latest"
+                "tweetsDesired": max_tweets,
+                "excludeImages": False,
+                "excludeLinks": False,
+                "excludeMedia": False,
+                "excludeNativeRetweets": True,
+                "excludeNativeVideo": False,
+                "excludeNews": False,
+                "excludeProVideo": False,
+                "excludeQuote": True,
+                "excludeReplies": True,
+                "excludeSafe": False,
+                "excludeVerified": False,
+                "excludeVideos": False,
+                "images": False,
+                "includeUserInfo": True,
+                "language": language,
+                "links": False,
+                "media": True,
+                "minLikes": min_likes,
+                "minReplies": min_replies,
+                "minRetweets": min_retweets,
+                "nativeRetweets": False,
+                "nativeVideo": False,
+                "news": False,
+                "proVideo": False,
+                "proxyConfig": {
+                    "useApifyProxy": True,
+                    "apifyProxyGroups": ["RESIDENTIAL"]
+                },
+                "quote": False,
+                "replies": False,
+                "repliesDepth": 0,
+                "safe": False,
+                "since": time_range,
+                "verified": False,
+                "videos": False
             }
+
+            # Allow custom parameters to override defaults
+            if custom_params:
+                run_input.update(custom_params)
             
             try:
                 # Run the Twitter Search actor (no authentication required)
@@ -214,23 +260,25 @@ def main():
     
     # Define your topics of interest (customize these!)
     topics = [
-        "artificial intelligence",
-        "climate change",
-        "cryptocurrency"
+        "artificial intelligence"
     ]
     
     print("🚀 Starting Twitter Trending Scraper...")
     print(f"📋 Topics to search: {', '.join(topics)}")
-    
-    # Search for trending tweets
+
+    # Search for trending tweets with advanced filtering
     results = scraper.search_trending_tweets(
         topics=topics,
-        max_tweets=100,  # Adjust as needed
-        search_type="Top"  # Use "Top" for trending, "Latest" for most recent
+        max_tweets=2,  # Number of tweets desired
+        min_likes=200,  # Minimum engagement thresholds
+        min_replies=20,
+        min_retweets=50,
+        time_range="1 day",  # Get recent viral content
+        language="en"  # English tweets only
     )
-    
+
     # Display the results
-    scraper.display_results(results, top_n=5)
+    scraper.display_results(results, top_n=10)
     
     # Save to JSON file
     scraper.save_to_json(results)
