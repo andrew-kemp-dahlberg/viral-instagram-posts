@@ -37,6 +37,24 @@ python add_media_descriptions.py trending_tweets_20251109_164707.json
 python add_media_descriptions.py input.json output_described.json
 ```
 
+### Generating Instagram Hooks
+```bash
+# Generate 10 viral Instagram reel hooks in Parker Doyle's style
+python hook_creation.py trending_tweets_20251109_164707_described.json
+
+# Specify custom output file
+python hook_creation.py input_described.json output_with_hooks.json
+```
+
+### Selecting Hooks via Slack
+```bash
+# Send tweets to Slack and allow users to select their top 3 hooks
+python slack_integration.py trending_tweets_20251109_164707_with_hooks.json
+
+# Specify custom output file
+python slack_integration.py input_with_hooks.json output_selected.json
+```
+
 ## Code Architecture
 
 ### Core Components
@@ -58,6 +76,27 @@ python add_media_descriptions.py input.json output_described.json
   - `describe_image()`: Generates 1-2 sentence image descriptions using GPT-4o
   - `describe_video()`: Generates video descriptions using Gemini API
   - `process_json_file()`: Processes entire JSON files, adding descriptions to all media items
+
+**HookGenerator class** (hook_creation.py:23-154)
+- Generates Instagram reel text hooks in Parker Doyle's viral style using Claude AI
+- Uses **Claude 4.5 Sonnet (Anthropic)** for hook generation
+- Analyzes tweet content and media descriptions to create viral hooks
+- Three primary methods:
+  - `generate_hooks()`: Creates 10 hook options for a single tweet
+  - `_parse_hooks()`: Parses Claude's response into a list of hooks
+  - `process_json_file()`: Processes entire JSON files, adding hooks to all tweets
+
+**SlackIntegration class** (slack_integration.py:23-370)
+- Sends processed tweets to Slack for user review and hook selection
+- Uses **Slack SDK (WebClient)** with polling-based user interaction
+- Formats tweets with Slack Block Kit for rich presentation
+- Five primary methods:
+  - `send_tweets_to_slack()`: Posts tweets to Slack grouped by topic with formatted messages
+  - `_format_tweet_message()`: Creates Block Kit message with tweet text, engagement metrics, media, and hooks
+  - `poll_for_selections()`: Polls Slack threads for user replies containing hook selections
+  - `_parse_selection()`: Parses user replies like "1, 5, 9" into hook numbers
+  - `save_selected_hooks()`: Adds `selected_hooks` array to JSON with user's top 3 choices
+  - `process_json_file()`: Main orchestrator for send → poll → save workflow
 
 ### Data Flow
 
@@ -97,6 +136,53 @@ python add_media_descriptions.py input.json output_described.json
 3. **Output**:
    - New JSON file: `[original_name]_described.json`
    - Same structure as input but with added `description` field in each media item
+
+**Hook Generation Workflow:**
+
+1. **Input**: JSON file with descriptions (from add_media_descriptions.py)
+2. **Processing**: For each tweet (hook_creation.py:131-165):
+   - Extracts tweet text and media descriptions
+   - Constructs context from tweet content and media
+   - **Calls Claude 4.5 Sonnet API** (hook_creation.py:42-87):
+     - Prompt includes Parker Doyle's style guidelines (casual, confident, uses "bro", emojis)
+     - Provides tweet context and media descriptions
+     - Requests 10 hook options between 5-15 words
+     - Emphasizes social calibration over forced relatability
+     - Max tokens: 1000
+   - **Parses response** (hook_creation.py:89-115):
+     - Extracts hooks from numbered list format
+     - Handles various numbering formats (1., 1), 1-, etc.)
+   - Adds `hooks` array to tweet object containing 10 hook options
+3. **Output**:
+   - New JSON file: `[original_name]_with_hooks.json`
+   - Same structure as input but with added `hooks` array in each tweet
+
+**Slack Hook Selection Workflow:**
+
+1. **Input**: JSON file with hooks (from hook_creation.py)
+2. **Processing** (slack_integration.py:100-370):
+   - **Send to Slack** (slack_integration.py:100-155):
+     - Groups tweets by topic/query for organized presentation
+     - Sends topic header message with tweet count
+     - For each tweet, creates Block Kit formatted message including:
+       - Tweet text, author, and URL
+       - Engagement metrics (likes, retweets, replies, score)
+       - Media items with descriptions
+       - All 10 hooks numbered 1-10
+     - Stores message thread timestamps for polling
+     - Adds context instruction: "Reply with 3 numbers (e.g., '1, 5, 9')"
+   - **Poll for selections** (slack_integration.py:157-230):
+     - Monitors each thread for user replies (default: check every 10 seconds)
+     - Parses user text for hook numbers using regex
+     - Validates selections (exactly 3 numbers, within hook range)
+     - Continues until all tweets have selections or timeout (default: 1 hour)
+   - **Save selections** (slack_integration.py:232-260):
+     - Adds `selected_hooks` array with the 3 chosen hook texts
+     - Adds `selected_hook_indices` array with the original numbers (1-indexed)
+     - Adds `selection_timestamp` with ISO format timestamp
+3. **Output**:
+   - New JSON file: `[original_name]_selected.json`
+   - Same structure as input but with added selection metadata in each tweet
 
 ### Key Implementation Details
 
@@ -156,12 +242,17 @@ Modify the `search_trending_tweets()` call (scraper.py:183-187):
 - `APIFY_API_TOKEN`: Your Apify API token (required for scraper.py)
 - `OPENAI_API_KEY`: Your OpenAI API key (required for add_media_descriptions.py image processing)
 - `GEMINI_API_KEY`: Your Google Gemini API key (required for add_media_descriptions.py video processing)
+- `ANTHROPIC_API_KEY`: Your Anthropic API key (required for hook_creation.py hook generation)
+- `SLACK_BOT_TOKEN`: Your Slack Bot User OAuth Token starting with `xoxb-` (required for slack_integration.py)
+- `SLACK_CHANNEL_ID`: Your Slack channel ID (e.g., `C1234567890`) where tweets will be posted (required for slack_integration.py)
 
 ## Output Files
 
 All JSON outputs are excluded from git via .gitignore:
 - `trending_tweets_*.json` - Raw scraped tweet data with media URLs
 - `*_described.json` - Processed files with AI-generated media descriptions
+- `*_with_hooks.json` - Processed files with viral Instagram reel hooks (10 options per tweet)
+- `*_selected.json` - Final files with user-selected hooks (3 chosen hooks per tweet) from Slack
 
 ## Dependencies
 
@@ -170,3 +261,5 @@ All JSON outputs are excluded from git via .gitignore:
 - `python-dotenv>=1.0.0` - Environment variable management
 - `openai>=1.0.0` - OpenAI API client for GPT-4o Vision (image descriptions)
 - `google-generativeai>=0.3.0` - Google Gemini API client (video descriptions)
+- `anthropic>=0.39.0` - Anthropic API client for Claude 4.5 Sonnet (hook generation)
+- `slack-sdk>=3.0.0` - Slack SDK for posting messages and polling thread replies (hook selection)
