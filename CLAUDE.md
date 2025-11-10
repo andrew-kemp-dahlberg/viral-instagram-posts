@@ -28,6 +28,15 @@ chmod +x scraper.py
 ./scraper.py
 ```
 
+### Adding Media Descriptions
+```bash
+# Add AI-generated descriptions to media in tweet JSON files
+python add_media_descriptions.py trending_tweets_20251109_164707.json
+
+# Specify custom output file
+python add_media_descriptions.py input.json output_described.json
+```
+
 ## Code Architecture
 
 ### Core Components
@@ -40,7 +49,19 @@ chmod +x scraper.py
   - `display_results()`: Formats output for console display
   - `save_to_json()`: Persists results to timestamped JSON files
 
+**MediaDescriptionGenerator class** (add_media_descriptions.py:18-160)
+- Adds AI-generated descriptions to media objects in tweet JSON files
+- Uses two AI models for different media types:
+  - **GPT-4o (OpenAI)**: Generates descriptions for images via Vision API
+  - **Gemini 1.5 Flash (Google)**: Generates descriptions for videos
+- Three primary methods:
+  - `describe_image()`: Generates 1-2 sentence image descriptions using GPT-4o
+  - `describe_video()`: Generates video descriptions using Gemini API
+  - `process_json_file()`: Processes entire JSON files, adding descriptions to all media items
+
 ### Data Flow
+
+**Tweet Scraping Workflow:**
 
 1. **Input**: Topics list defined in `main()` function (scraper.py:173-177)
 2. **Processing**: For each topic:
@@ -58,6 +79,24 @@ chmod +x scraper.py
 3. **Output**:
    - Console display (top N tweets per topic) with media URLs shown
    - JSON file: `trending_tweets_YYYYMMDD_HHMMSS.json`
+
+**Media Description Workflow:**
+
+1. **Input**: JSON file from tweet scraper containing media objects
+2. **Processing**: For each tweet with media (add_media_descriptions.py:142-147):
+   - Iterates through media items in the `media` array
+   - Determines media type (image/video)
+   - **For images** (add_media_descriptions.py:116-117):
+     - Calls OpenAI GPT-4o Vision API with prompt requesting 1-2 sentence description
+     - Focuses on key visual elements and any visible text
+     - Max tokens: 150
+   - **For videos** (add_media_descriptions.py:118-119):
+     - Calls Gemini 1.5 Flash API to generate video description
+     - Note: Current implementation uses URL-based prompting (placeholder for full video upload)
+   - Adds `description` field to each media object
+3. **Output**:
+   - New JSON file: `[original_name]_described.json`
+   - Same structure as input but with added `description` field in each media item
 
 ### Key Implementation Details
 
@@ -114,8 +153,20 @@ Modify the `search_trending_tweets()` call (scraper.py:183-187):
 ## Environment Variables
 
 `.env` file (never committed, in .gitignore):
-- `APIFY_API_TOKEN`: Your Apify API token (required)
+- `APIFY_API_TOKEN`: Your Apify API token (required for scraper.py)
+- `OPENAI_API_KEY`: Your OpenAI API key (required for add_media_descriptions.py image processing)
+- `GEMINI_API_KEY`: Your Google Gemini API key (required for add_media_descriptions.py video processing)
 
 ## Output Files
 
-All JSON outputs follow pattern: `trending_tweets_*.json` (excluded from git via .gitignore:43)
+All JSON outputs are excluded from git via .gitignore:
+- `trending_tweets_*.json` - Raw scraped tweet data with media URLs
+- `*_described.json` - Processed files with AI-generated media descriptions
+
+## Dependencies
+
+**Core dependencies** (requirements.txt):
+- `apify-client>=1.0.0` - Apify API client for Twitter scraping
+- `python-dotenv>=1.0.0` - Environment variable management
+- `openai>=1.0.0` - OpenAI API client for GPT-4o Vision (image descriptions)
+- `google-generativeai>=0.3.0` - Google Gemini API client (video descriptions)

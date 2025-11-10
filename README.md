@@ -1,6 +1,6 @@
 # Twitter Trending Topics Scraper
 
-A Python script to find trending tweets on customizable topics using Apify's Twitter scraper actors. Filters out retweets to focus on original content and extracts media URLs for further analysis.
+A Python script to find trending tweets on customizable topics using Apify's Twitter scraper actors. Filters out retweets to focus on original content, extracts media URLs, and optionally generates AI-powered descriptions for images and videos.
 
 ## Features
 
@@ -8,6 +8,7 @@ A Python script to find trending tweets on customizable topics using Apify's Twi
 - 📊 Filter for "Top" (trending/popular) or "Latest" tweets
 - 🚫 Automatically filters out retweets to focus on original content
 - 🖼️ Extract media URLs (images, videos) from tweets
+- 🤖 AI-powered media descriptions using GPT-4o (images) and Gemini (videos)
 - 💬 Extract tweet text, engagement metrics (likes, retweets, replies)
 - 👤 Get user information (username, followers, verified status)
 - 📁 Save results to JSON format
@@ -20,18 +21,24 @@ A Python script to find trending tweets on customizable topics using Apify's Twi
    - Sign up at: https://console.apify.com/sign-up
 3. **Apify API Token**
    - Get it from: https://console.apify.com/account/integrations
+4. **Optional: AI API Keys** (for media descriptions)
+   - **OpenAI API Key** - For image descriptions (GPT-4o Vision)
+     - Get it from: https://platform.openai.com/api-keys
+   - **Google Gemini API Key** - For video descriptions
+     - Get it from: https://aistudio.google.com/app/apikey
 
 ## Installation
 
-1. Install the required Python packages:
-```bash
-pip install apify-client python-dotenv
-```
-
-Or use the requirements file:
+Install the required Python packages:
 ```bash
 pip install -r requirements.txt
 ```
+
+This will install:
+- `apify-client` - For Twitter scraping
+- `python-dotenv` - For environment variable management
+- `openai` - For GPT-4o image descriptions (optional)
+- `google-generativeai` - For Gemini video descriptions (optional)
 
 ## Setup
 
@@ -40,14 +47,18 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-2. **Add your Apify API token** to the `.env` file:
+2. **Add your API tokens** to the `.env` file:
 ```
 APIFY_API_TOKEN=your_actual_token_here
+OPENAI_API_KEY=your_openai_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
-   - Get your token from: https://console.apify.com/account/integrations
+   - **APIFY_API_TOKEN** (required): Get from https://console.apify.com/account/integrations
+   - **OPENAI_API_KEY** (optional): Get from https://platform.openai.com/api-keys
+   - **GEMINI_API_KEY** (optional): Get from https://aistudio.google.com/app/apikey
    - **Important:** Never commit your `.env` file to version control!
 
-3. **Customize the topics** you want to search in `twitter_trending_scraper.py`:
+3. **Customize the topics** you want to search in `scraper.py`:
 ```python
 topics = [
     "artificial intelligence",
@@ -58,9 +69,27 @@ topics = [
 
 ## Usage
 
-Run the script:
+### Step 1: Scrape Tweets
+
+Run the scraper to collect tweets:
 ```bash
-python twitter_trending_scraper.py
+python scraper.py
+```
+
+This will create a JSON file: `trending_tweets_YYYYMMDD_HHMMSS.json`
+
+### Step 2: Add Media Descriptions (Optional)
+
+Generate AI-powered descriptions for images and videos:
+```bash
+python add_media_descriptions.py trending_tweets_20251109_164707.json
+```
+
+This will create a new file: `trending_tweets_20251109_164707_described.json`
+
+You can specify a custom output file:
+```bash
+python add_media_descriptions.py input.json output.json
 ```
 
 ### Customization Options
@@ -111,13 +140,43 @@ The script will:
 
 **Note:** The scraper automatically filters out retweets, showing only original tweets.
 
+### Media Descriptions Output
+
+After running `add_media_descriptions.py`, each media object will include a `description` field:
+
+```json
+{
+  "media": [
+    {
+      "type": "image",
+      "url": "https://pbs.twimg.com/media/...",
+      "description": "A graph showing AI adoption trends over the past decade with an upward trajectory."
+    }
+  ]
+}
+```
+
 ## Cost Information
 
-Twitter scraping costs vary by actor. The Easy Twitter Search Scraper used in this script is cost-effective. The free Apify tier includes:
+### Twitter Scraping Costs
+
+The Easy Twitter Search Scraper used in this script is cost-effective. The free Apify tier includes:
 - $5 of free platform credits per month
 - Sufficient for thousands of tweets per month depending on the actor used
 
 Typical costs range from $0.01 to $0.40 per 1,000 tweets depending on the complexity and features of the actor.
+
+### AI Media Description Costs
+
+**OpenAI GPT-4o (Images):**
+- Pricing: ~$0.00015 per image (based on GPT-4o pricing at 150 tokens)
+- Free tier: New accounts get $5 credit (expires after 3 months)
+- Example: ~33,000 image descriptions for $5
+
+**Google Gemini 1.5 Flash (Videos):**
+- Pricing: Free tier available with rate limits
+- Free tier: 15 requests per minute, 1,500 requests per day
+- Paid tier: Very low cost per request (~$0.00001 per request)
 
 ## API Reference
 
@@ -132,6 +191,8 @@ Alternative actors you can try:
 - `easyapi/twitter-trending-topics-scraper` - Twitter Trending Topics Scraper (for country-specific trends)
 
 ## Troubleshooting
+
+### Scraper Issues
 
 **Error: "APIFY_API_TOKEN not found in environment variables"**
 - Make sure you've created a `.env` file in the project directory
@@ -151,20 +212,44 @@ Alternative actors you can try:
 - Apify API has a rate limit of 250,000 requests per minute globally
 - Free tier accounts may have additional limitations
 
+### Media Description Issues
+
+**Warning: "OPENAI_API_KEY not found in environment"**
+- Add your OpenAI API key to the `.env` file
+- Get a key from: https://platform.openai.com/api-keys
+- This is only needed if you want to generate image descriptions
+
+**Warning: "GEMINI_API_KEY not found in environment"**
+- Add your Gemini API key to the `.env` file
+- Get a key from: https://aistudio.google.com/app/apikey
+- This is only needed if you want to generate video descriptions
+
+**Error describing media:**
+- Check your API keys are valid and have available credits
+- Verify the media URLs are accessible
+- Check rate limits for your API tier
+
 ## Security Best Practices
 
-- ✅ **DO** use the `.env` file for your API token
+- ✅ **DO** use the `.env` file for all API tokens (Apify, OpenAI, Gemini)
 - ✅ **DO** add `.env` to your `.gitignore` file (already included)
 - ✅ **DO** use `.env.example` as a template to share with others
 - ❌ **DON'T** commit your `.env` file to version control
-- ❌ **DON'T** share your API token publicly
-- ❌ **DON'T** hardcode your API token in the script
+- ❌ **DON'T** share your API tokens publicly
+- ❌ **DON'T** hardcode your API tokens in any scripts
 
 ## Additional Resources
 
+### Scraping APIs
 - Apify API Documentation: https://docs.apify.com/api/v2
 - Python Client Documentation: https://docs.apify.com/api/client/python
 - Twitter Scraper Options: https://apify.com/scrapers/twitter
+
+### AI APIs
+- OpenAI GPT-4o Vision API: https://platform.openai.com/docs/guides/vision
+- Google Gemini API: https://ai.google.dev/gemini-api/docs
+- OpenAI API Pricing: https://openai.com/api/pricing/
+- Gemini API Pricing: https://ai.google.dev/pricing
 
 ## Legal Notice
 

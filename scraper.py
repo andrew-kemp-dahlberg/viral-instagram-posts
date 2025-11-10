@@ -269,7 +269,7 @@ def main():
     # Search for trending tweets with advanced filtering
     results = scraper.search_trending_tweets(
         topics=topics,
-        max_tweets=2,  # Number of tweets desired
+        max_tweets=3,  # Number of tweets desired
         min_likes=200,  # Minimum engagement thresholds
         min_replies=20,
         min_retweets=50,
