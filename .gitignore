@@ -42,6 +42,12 @@ env/
 # Output files
 trending_tweets_*.json
 
+# Video generation
+cache/
+output/
+*.mp4
+*.log
+
 # OS
 .DS_Store
 Thumbs.db

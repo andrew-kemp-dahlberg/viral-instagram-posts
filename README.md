@@ -1,6 +1,6 @@
 # Twitter Trending Topics Scraper & Instagram Hook Generator
 
-A Python toolkit to find trending tweets on customizable topics using Apify's Twitter scraper actors, then transform them into viral Instagram reel hooks. Filters out retweets to focus on original content, extracts media URLs, generates AI-powered descriptions for images and videos, creates scroll-stopping text hooks in Parker Doyle's viral style, and sends them to Slack for team review and hook selection.
+A Python toolkit to find trending tweets on customizable topics using Apify's Twitter scraper actors, then transform them into viral Instagram reel hooks. Filters out retweets to focus on original content, extracts media URLs, downloads and caches media files with intelligent retry logic, generates AI-powered descriptions for images and videos, creates scroll-stopping text hooks in Parker Doyle's viral style, and sends them to Slack for team review and hook selection.
 
 ## Features
 
@@ -8,6 +8,7 @@ A Python toolkit to find trending tweets on customizable topics using Apify's Tw
 - 📊 Filter for "Top" (trending/popular) or "Latest" tweets
 - 🚫 Automatically filters out retweets to focus on original content
 - 🖼️ Extract media URLs (images, videos) from tweets
+- 📥 Download and cache media files with intelligent retry logic and progress tracking
 - 🤖 AI-powered media descriptions using GPT-4o (images) and Gemini (videos)
 - 🎣 Generate viral Instagram reel hooks using Claude 4.5 Sonnet in Parker Doyle's style
 - 💬 Extract tweet text, engagement metrics (likes, retweets, replies)
@@ -16,22 +17,28 @@ A Python toolkit to find trending tweets on customizable topics using Apify's Tw
 - 🎯 Calculate engagement scores to rank tweets
 - 📲 Send tweets to Slack for team review with rich formatting
 - ✅ Select top 3 hooks via Slack thread replies for each tweet
+- 💾 Smart caching system with TTL to avoid re-downloading media
+- 🎬 Generate Instagram Reel videos with hooks, tweets, and media (coming soon)
 
 ## Prerequisites
 
 1. **Python 3.7+** installed on your system
-2. **Apify Account** (free tier available)
+2. **FFmpeg** (for video generation, optional)
+   - macOS: `brew install ffmpeg`
+   - Ubuntu/Debian: `sudo apt install ffmpeg`
+   - Windows: Download from https://ffmpeg.org/download.html
+3. **Apify Account** (free tier available)
    - Sign up at: https://console.apify.com/sign-up
-3. **Apify API Token**
+4. **Apify API Token**
    - Get it from: https://console.apify.com/account/integrations
-4. **Optional: AI API Keys**
+5. **Optional: AI API Keys**
    - **OpenAI API Key** - For image descriptions (GPT-4o Vision)
      - Get it from: https://platform.openai.com/api-keys
    - **Google Gemini API Key** - For video descriptions
      - Get it from: https://aistudio.google.com/app/apikey
    - **Anthropic API Key** - For Instagram hook generation (Claude 4.5 Sonnet)
      - Get it from: https://console.anthropic.com/settings/keys
-5. **Optional: Slack Bot** (for hook selection workflow)
+6. **Optional: Slack Bot** (for hook selection workflow)
    - **Slack Bot Token** - For posting tweets and collecting user selections
      - Create a Slack App at: https://api.slack.com/apps
      - Add bot scopes: `chat:write`, `channels:history`, `channels:read`
@@ -53,6 +60,8 @@ This will install:
 - `google-generativeai` - For Gemini video descriptions (optional)
 - `anthropic` - For Claude 4.5 Sonnet hook generation (optional)
 - `slack-sdk` - For Slack integration and hook selection (optional)
+- `requests` - For downloading media files from URLs
+- `tqdm` - For progress bars during media downloads
 
 ## Setup
 
@@ -86,6 +95,26 @@ topics = [
     "cryptocurrency"
 ]
 ```
+
+4. **Set up video generation assets** (optional, for future video generation feature):
+```bash
+# Run asset validation and setup
+python setup_assets.py
+```
+
+This will:
+- ✅ Check if FFmpeg is installed
+- ✅ Verify system fonts (Arial or alternatives)
+- ✅ Create required directory structure (`assets/`, `cache/`, `output/`)
+- ✅ Provide instructions for creating tweet box PNG assets
+
+**Tweet Box Assets:**
+You'll need to create 3 PNG images for tweet boxes:
+- `assets/tweet_boxes/tweet_1liner.png` - For single-line tweets
+- `assets/tweet_boxes/tweet_2liner.png` - For two-line tweets
+- `assets/tweet_boxes/tweet_3liner.png` - For three-line tweets
+
+See `assets/tweet_boxes/README.md` for detailed specifications and design guidelines.
 
 ## Usage
 
@@ -159,6 +188,50 @@ python slack_integration.py input_with_hooks.json output_selected.json
 2. Click "Reply in thread" or hover and click the message icon
 3. Type 3 numbers corresponding to your favorite hooks (e.g., "1, 5, 9" or "2 7 10")
 4. The script will automatically detect your selection and save it
+
+### Step 5: Download Media Files (Optional)
+
+The `MediaDownloader` class provides robust downloading and caching for tweet media:
+
+```python
+from media_downloader import MediaDownloader
+
+# Initialize downloader
+downloader = MediaDownloader(config_path='video_config.json')
+
+# Download single media file (automatically caches)
+local_path = downloader.download_media('https://pbs.twimg.com/media/example.jpg')
+print(f"Downloaded to: {local_path}")
+
+# Download with custom cache directory
+local_path = downloader.download_media(
+    'https://video.twimg.com/ext_tw_video/example.mp4',
+    cache_dir='./custom/cache'
+)
+
+# Clear expired cache entries
+removed = downloader.clear_expired_cache()
+print(f"Removed {removed} expired files")
+```
+
+**Features:**
+- **Smart caching**: MD5-based cache keys prevent duplicate downloads
+- **Retry logic**: 3 attempts with exponential backoff (1s, 2s, 4s)
+- **Progress tracking**: Beautiful tqdm progress bars for downloads
+- **File validation**: Verifies downloads using magic number checking
+- **Atomic writes**: Downloads to temp file then renames (no partial files)
+- **TTL support**: Cached files expire after 24 hours (configurable)
+- **Error handling**: Clean messages for network failures, HTTP errors
+
+**Supported formats:**
+- Images: JPG, PNG, GIF, WEBP
+- Videos: MP4, MOV, AVI, WEBM, M4V
+
+**Cache management:**
+- Cache directory: `cache/media/` (configurable in `video_config.json`)
+- Each cached file gets a metadata JSON sidecar with download info
+- TTL configurable via `video_config.json` → `processing.cache_ttl_hours`
+- All downloads logged to `media_download.log`
 
 ### Customization Options
 
@@ -411,6 +484,76 @@ Alternative actors you can try:
 - Make sure you entered exactly 3 numbers
 - Check that the input JSON file has a `hooks` array with at least the numbers you selected
 - The script will show warnings if hook numbers are out of range
+
+### Video Generation Setup Issues
+
+**Error: "FFmpeg not found in PATH"**
+- FFmpeg is required for video generation
+- Installation instructions:
+  - macOS: `brew install ffmpeg`
+  - Ubuntu/Debian: `sudo apt install ffmpeg`
+  - Windows: Download from https://ffmpeg.org/download.html and add to PATH
+- Verify installation: `ffmpeg -version`
+
+**Warning: "No configured fonts found on system"**
+- The video generator needs a sans-serif font (Arial, Helvetica, or Liberation Sans)
+- Most systems have these fonts pre-installed
+- macOS: Arial is typically included
+- Linux: Install with `sudo apt install fonts-liberation`
+- Check available fonts: `fc-list | grep -i arial`
+
+**Error: "Tweet box assets missing"**
+- You need to create 3 PNG files for tweet boxes
+- See `assets/tweet_boxes/README.md` for detailed specifications
+- Required files:
+  - `assets/tweet_boxes/tweet_1liner.png`
+  - `assets/tweet_boxes/tweet_2liner.png`
+  - `assets/tweet_boxes/tweet_3liner.png`
+- Use design tools like Figma, Photoshop, GIMP, or Canva
+- Follow the template in the README for dimensions and styling
+
+**Directory structure not created:**
+- Run `python setup_assets.py` to automatically create directories
+- Or manually create: `mkdir -p assets/tweet_boxes cache/media output`
+- Verify with: `ls -la assets/ cache/ output/`
+
+### Media Download Issues
+
+**Error: "Failed to download after 3 attempts"**
+- Check your internet connection
+- Verify the media URL is still accessible (try opening in browser)
+- Check if Twitter/X has rate-limited your IP
+- Some media URLs expire after time - try with fresh tweets
+- Check `media_download.log` for detailed error messages
+
+**Error: "Downloaded file failed validation"**
+- The file may be corrupted or incomplete
+- Check available disk space
+- Try clearing the cache and re-downloading: `rm -rf cache/media/*`
+- Verify network stability during download
+
+**Cache not working / re-downloading same files:**
+- Check that `cache/media/` directory exists and is writable
+- Verify `video_config.json` has correct `paths.media_cache_dir` setting
+- Check if cache files have expired (TTL default is 24 hours)
+- Look for errors in `media_download.log`
+
+**Download progress bar not showing:**
+- Some servers don't provide Content-Length headers
+- Download will still work, just without progress indication
+- Check `media_download.log` to confirm download is progressing
+
+**Error: "HTTP error: 403" or "HTTP error: 404"**
+- 403 Forbidden: Media URL may require authentication or has access restrictions
+- 404 Not Found: Media URL is no longer available (deleted or expired)
+- These errors don't retry automatically as they won't succeed
+- Try with different media URLs
+
+**Cache filling up disk space:**
+- Run `downloader.clear_expired_cache()` to remove old files
+- Manually delete cache: `rm -rf cache/media/*`
+- Reduce cache TTL in `video_config.json`: `"cache_ttl_hours": 12`
+- Monitor cache size: `du -sh cache/media/`
 
 ## Security Best Practices
 

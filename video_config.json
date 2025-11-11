@@ -1,0 +1,109 @@
+{
+  "version": "1.0.0",
+  "description": "Configuration for Instagram Reel video generation",
+
+  "paths": {
+    "assets_dir": "assets",
+    "tweet_boxes_dir": "assets/tweet_boxes",
+    "fonts_dir": "assets/fonts",
+    "cache_dir": "cache",
+    "media_cache_dir": "cache/media",
+    "output_dir": "output"
+  },
+
+  "assets": {
+    "tweet_boxes": {
+      "1_liner": "assets/tweet_boxes/tweet_1liner.png",
+      "2_liner": "assets/tweet_boxes/tweet_2liner.png",
+      "3_liner": "assets/tweet_boxes/tweet_3liner.png"
+    },
+    "fonts": {
+      "hook_text": {
+        "family": "Arial",
+        "fallbacks": ["Helvetica", "Liberation Sans", "sans-serif"],
+        "size": 60,
+        "weight": "bold",
+        "color": "#FFFFFF"
+      }
+    }
+  },
+
+  "video": {
+    "resolution": {
+      "width": 2160,
+      "height": 3840,
+      "comment": "9:16 aspect ratio for Instagram Reels (4K vertical)"
+    },
+    "framerate": 30,
+    "encoding": {
+      "codec": "libx264",
+      "preset": "medium",
+      "crf": 18,
+      "comment": "CRF 18 = high quality (0=lossless, 51=worst, 18-23=visually lossless)"
+    },
+    "audio": {
+      "codec": "aac",
+      "bitrate": "128k"
+    }
+  },
+
+  "effects": {
+    "background_blur": {
+      "enabled": true,
+      "sigma": 20,
+      "comment": "Gaussian blur strength (higher = more blur)"
+    },
+    "media_scaling": {
+      "mode": "fit",
+      "max_width_percent": 90,
+      "max_height_percent": 70,
+      "comment": "Fit media within percentage of video dimensions"
+    }
+  },
+
+  "positions": {
+    "hook_text": {
+      "x": "center",
+      "y": 150,
+      "max_width": 1900,
+      "alignment": "center",
+      "comment": "Hook text positioned at top of video"
+    },
+    "tweet_box": {
+      "x": "center",
+      "y": "center",
+      "comment": "Tweet box centered in frame"
+    },
+    "media_overlay": {
+      "x": "center",
+      "y": "center",
+      "comment": "Media content centered in frame"
+    }
+  },
+
+  "timing": {
+    "media_duration": 5.0,
+    "fade_in_duration": 0.3,
+    "fade_out_duration": 0.3,
+    "comment": "All durations in seconds"
+  },
+
+  "processing": {
+    "parallel_workers": 4,
+    "comment": "Number of videos to generate in parallel",
+    "cache_downloads": true,
+    "cache_ttl_hours": 24,
+    "comment_2": "Cache downloaded media for 24 hours"
+  },
+
+  "output": {
+    "filename_format": "{query}_{index}_{timestamp}",
+    "extension": "mp4",
+    "overwrite_existing": false
+  },
+
+  "logging": {
+    "level": "INFO",
+    "file": "video_generation.log"
+  }
+}
