@@ -19,6 +19,7 @@ A Python toolkit to find trending tweets on customizable topics using Apify's Tw
 - ✅ Select top 3 hooks via Slack thread replies for each tweet
 - 💾 Smart caching system with TTL to avoid re-downloading media
 - 🎬 Generate Instagram Reel videos with hooks, tweets, and media (coming soon)
+- 🚀 **Automated pipeline orchestrator** to run the entire workflow end-to-end
 
 ## Prerequisites
 
@@ -116,7 +117,82 @@ You'll need to create 3 PNG images for tweet boxes:
 
 See `assets/tweet_boxes/README.md` for detailed specifications and design guidelines.
 
-## Usage
+## Automated Pipeline (Recommended)
+
+**NEW!** Run the entire workflow automatically with a single command:
+
+```bash
+# Run the complete pipeline with default settings
+python orchestrator.py
+
+# Validate your setup first (dry run)
+python orchestrator.py --dry-run
+
+# Skip Slack and auto-select hooks
+python orchestrator.py --skip-slack
+
+# Use custom configuration
+python orchestrator.py --config my_config.json
+
+# Resume from a specific stage if something failed
+python orchestrator.py --resume-from media_download
+```
+
+The orchestrator will:
+1. ✅ **Validate prerequisites** - Check all API keys and dependencies
+2. 🔍 **Scrape tweets** - Collect trending content based on your topics
+3. 🤖 **Generate descriptions** - Add AI descriptions for all media (GPT-4o + Gemini)
+4. 🎣 **Create hooks** - Generate 10 viral Instagram hooks per tweet (Claude AI)
+5. ✅ **Select hooks** - Collect selections via Slack or auto-select top 3
+6. 📥 **Download media** - Cache all media files locally with progress tracking
+
+**Output:**
+- `orchestrator_output_TIMESTAMP.json` - Complete dataset ready for video generation
+- `orchestrator.log` - Detailed execution log
+- `cache/media/*` - All downloaded media files
+- `intermediate/*` - Stage outputs for debugging (optional)
+
+**Configuration:**
+
+Edit `orchestrator_config.json` to customize:
+- **Topics to search** - Change `scraper.topics` array
+- **Number of tweets** - Adjust `scraper.max_tweets_per_topic`
+- **Engagement filters** - Set minimum likes, retweets, replies
+- **Slack settings** - Poll interval, timeout duration
+- **Auto-selection** - Choose which hook indices to auto-select (default: 0, 4, 9)
+
+Example configuration:
+```json
+{
+  "scraper": {
+    "topics": ["viral sports moments", "funny animals"],
+    "max_tweets_per_topic": 30,
+    "min_engagement": {
+      "likes": 5000,
+      "total_score": 10000
+    }
+  },
+  "slack_integration": {
+    "enabled": true,
+    "timeout_minutes": 60
+  }
+}
+```
+
+**Resume capability:**
+
+If the pipeline fails at any stage, it saves a checkpoint. Resume from where it left off:
+```bash
+python orchestrator.py --resume-from hook_generation
+```
+
+Available stages: `scraper`, `media_descriptions`, `hook_generation`, `slack_integration`, `media_download`
+
+---
+
+## Manual Usage (Advanced)
+
+You can also run each stage individually for more control:
 
 ### Step 1: Scrape Tweets
 
@@ -390,6 +466,64 @@ Alternative actors you can try:
 - `easyapi/twitter-trending-topics-scraper` - Twitter Trending Topics Scraper (for country-specific trends)
 
 ## Troubleshooting
+
+### Orchestrator Issues
+
+**Error: "Configuration file not found"**
+- Make sure `orchestrator_config.json` exists in the project root
+- Or specify a custom config: `python orchestrator.py --config path/to/config.json`
+- The file is automatically created when you first set up the project
+
+**Error: "Prerequisite validation failed"**
+- Run with `--dry-run` to see which prerequisites are missing
+- Common issues:
+  - Missing API keys in `.env` file
+  - Output directories cannot be created (check permissions)
+  - Invalid configuration values (empty topics, negative numbers)
+- Fix the reported errors and run `--dry-run` again
+
+**Pipeline stops mid-execution:**
+- Check `orchestrator.log` for detailed error messages
+- The pipeline saves checkpoints automatically
+- Resume from the last successful stage: `python orchestrator.py --resume-from <stage_name>`
+- Use `--skip-slack` if Slack integration is causing issues
+
+**Slack timeout but no selections received:**
+- The orchestrator will automatically fall back to auto-selection
+- Check that your Slack bot is in the channel and has proper permissions
+- Verify you're replying in threads (not as new messages)
+- Adjust timeout in config: `slack_integration.timeout_minutes`
+
+**Auto-selection choosing wrong hooks:**
+- Customize which hooks to auto-select in `orchestrator_config.json`
+- Change `slack_integration.auto_select_indices` (e.g., `[0, 2, 7]` for hooks 1, 3, 8)
+- Indices are 0-based (0 = first hook, 9 = last hook)
+
+**Media downloads failing:**
+- Check your internet connection
+- Some tweets may have expired or deleted media
+- The orchestrator continues even if individual downloads fail
+- Failed downloads are logged with error messages in the JSON output
+- Check `media_download.log` for details
+
+**Intermediate files filling disk:**
+- Disable intermediate file saving in `orchestrator_config.json`:
+  ```json
+  "output": {
+    "save_intermediate_files": false
+  }
+  ```
+- Or manually clean up: `rm -rf intermediate/*`
+
+**Want to skip certain stages:**
+- Disable stages in `orchestrator_config.json` by setting `enabled: false`
+- Example to skip media descriptions:
+  ```json
+  "media_descriptions": {
+    "enabled": false
+  }
+  ```
+- Or run stages manually (see Manual Usage section)
 
 ### Scraper Issues
 

@@ -1,0 +1,72 @@
+{
+  "pipeline": {
+    "description": "Configuration for the viral Instagram posts pipeline orchestrator",
+    "version": "1.0.0"
+  },
+
+  "scraper": {
+    "topics": [
+      "viral sports moments",
+      "funny animals",
+      "unexpected moments"
+    ],
+    "max_tweets_per_topic": 20,
+    "search_type": "Top",
+    "min_engagement": {
+      "likes": 1000,
+      "retweets": 100,
+      "replies": 50,
+      "total_score": 1500
+    },
+    "time_range": "7 days"
+  },
+
+  "media_descriptions": {
+    "enabled": true,
+    "openai_model": "gpt-4o",
+    "gemini_model": "gemini-1.5-flash",
+    "max_description_tokens": 150
+  },
+
+  "hook_generation": {
+    "enabled": true,
+    "hooks_per_tweet": 10,
+    "claude_model": "claude-sonnet-4-5-20250929",
+    "max_hook_length": 15
+  },
+
+  "slack_integration": {
+    "enabled": true,
+    "poll_interval_seconds": 10,
+    "timeout_minutes": 60,
+    "selections_required": 3,
+    "auto_select_if_disabled": true,
+    "auto_select_indices": [0, 4, 9]
+  },
+
+  "media_download": {
+    "enabled": true,
+    "cache_dir": "./cache/media",
+    "parallel_downloads": 5,
+    "retry_attempts": 3,
+    "timeout_seconds": 30
+  },
+
+  "output": {
+    "directory": "./output",
+    "filename_prefix": "orchestrator_output",
+    "save_intermediate_files": true,
+    "intermediate_directory": "./intermediate"
+  },
+
+  "logging": {
+    "log_file": "orchestrator.log",
+    "log_level": "INFO",
+    "console_output": true
+  },
+
+  "resume": {
+    "enabled": true,
+    "checkpoint_file": "./orchestrator_checkpoint.json"
+  }
+}

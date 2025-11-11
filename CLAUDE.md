@@ -6,7 +6,52 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Python toolkit that scrapes trending tweets from Twitter/X using the Apify platform, transforms them into viral Instagram content, and prepares for video generation. The project searches for tweets on customizable topics, ranks them by engagement metrics (likes, retweets, replies), generates AI-powered media descriptions and Instagram hooks, enables team selection via Slack, and provides infrastructure for Instagram Reel video generation. Filters out retweets to focus on original content and extracts media URLs (images, videos) from tweets.
 
+**Key Feature:** The `orchestrator.py` script automates the entire workflow end-to-end with a single command, handling scraping, AI descriptions, hook generation, selection, and media download with comprehensive error handling, checkpointing, and resume capability.
+
 ## Development Commands
+
+### Automated Pipeline (Recommended)
+
+The orchestrator automates the entire workflow from scraping to media download:
+
+```bash
+# Run the complete pipeline with defaults
+python orchestrator.py
+
+# Validate prerequisites without executing
+python orchestrator.py --dry-run
+
+# Skip Slack integration and auto-select hooks
+python orchestrator.py --skip-slack
+
+# Use custom configuration file
+python orchestrator.py --config my_config.json
+
+# Resume from a specific stage after failure
+python orchestrator.py --resume-from media_download
+```
+
+The orchestrator chains all 5 pipeline stages:
+1. **Scraper** - Collects trending tweets using Apify
+2. **Media Descriptions** - Adds AI descriptions (GPT-4o + Gemini)
+3. **Hook Generation** - Creates 10 viral hooks per tweet (Claude)
+4. **Slack Integration** - Collects user selections or auto-selects
+5. **Media Download** - Downloads and caches all media files
+
+Configuration via `orchestrator_config.json`:
+- `scraper.topics` - List of topics to search
+- `scraper.max_tweets_per_topic` - Number of tweets per topic
+- `scraper.min_engagement` - Engagement thresholds (likes, retweets, replies)
+- `slack_integration.enabled` - Enable/disable Slack selection
+- `slack_integration.auto_select_indices` - Which hooks to auto-select [0, 4, 9]
+- `output.save_intermediate_files` - Save stage outputs for debugging
+
+Output:
+- `orchestrator_output_{timestamp}.json` - Final dataset with local media paths
+- `orchestrator.log` - Detailed execution log
+- `cache/media/*` - Downloaded media files
+- `intermediate/*` - Stage outputs (if enabled)
+- `orchestrator_checkpoint.json` - Resume state (auto-saved)
 
 ### Setup
 ```bash
@@ -172,6 +217,35 @@ success = generator.generate_single_variant(
 
 ### Core Components
 
+**PipelineOrchestrator class** (orchestrator.py:46-608)
+- Main orchestrator that automates the entire viral Instagram posts workflow
+- Chains all 5 pipeline stages sequentially with error handling and checkpointing
+- Validates prerequisites before execution (API keys, directories, configuration)
+- Nine primary methods:
+  - `validate_prerequisites()`: Checks API keys, directories, and configuration values before execution
+  - `run_pipeline()`: Main entry point - orchestrates all stages sequentially
+  - `run_stage_scraper()`: Stage 1 - Scrapes tweets using TwitterTrendingScraper, applies engagement filters
+  - `run_stage_media_descriptions()`: Stage 2 - Adds AI descriptions using MediaDescriptionGenerator
+  - `run_stage_hook_generation()`: Stage 3 - Generates hooks using HookGenerator
+  - `run_stage_slack_integration()`: Stage 4 - Collects selections via SlackIntegration or auto-selects
+  - `run_stage_media_download()`: Stage 5 - Downloads media using MediaDownloader, adds local_path fields
+  - `_save_checkpoint()`: Saves pipeline state after each stage for resume capability
+  - `_print_summary()`: Displays execution statistics and final output location
+- Key features:
+  - **Prerequisite validation**: Checks all API keys exist before starting
+  - **Engagement filtering**: Applies min_engagement thresholds from config
+  - **Auto-selection fallback**: Falls back to auto-selection if Slack fails or is disabled
+  - **Progress tracking**: Uses tqdm progress bars for long operations
+  - **Error handling**: Graceful failures with detailed logging
+  - **Checkpointing**: Saves state after each stage for resume capability
+  - **Intermediate files**: Optional saving of stage outputs for debugging
+  - **Statistics reporting**: Prints summary with tweet count, media count, duration
+- Configuration loaded from orchestrator_config.json with sections for each stage
+- Logs all operations to orchestrator.log with INFO level
+- CLI interface with argparse: --dry-run, --skip-slack, --resume-from, --config
+- Stops after media download stage (does not include video generation)
+- Output: orchestrator_output_{timestamp}.json with complete dataset and local media paths
+
 **TwitterTrendingScraper class** (scraper.py:17-152)
 - Main orchestrator for Twitter data collection
 - Uses Apify's `web.harvester/easy-twitter-search-scraper` actor (no Twitter auth required)
@@ -284,6 +358,67 @@ success = generator.generate_single_variant(
 - Reads all configuration from video_config.json
 
 ### Data Flow
+
+**Automated Pipeline Workflow (orchestrator.py):**
+
+1. **Prerequisites Validation** (orchestrator.py:115-183):
+   - Loads environment variables from .env file
+   - Checks for required API keys: APIFY_API_TOKEN, OPENAI_API_KEY, GEMINI_API_KEY, ANTHROPIC_API_KEY
+   - Optionally checks SLACK_BOT_TOKEN and SLACK_CHANNEL_ID if Slack integration enabled
+   - Creates output directories: output/, cache/media/, intermediate/ (if enabled)
+   - Validates configuration: topics not empty, max_tweets_per_topic > 0
+   - Returns success/failure with list of error messages
+
+2. **Stage 1: Twitter Scraping** (orchestrator.py:185-250):
+   - Instantiates TwitterTrendingScraper class
+   - Scrapes tweets for all topics in config
+   - Applies engagement filters from config (min_likes, min_retweets, min_replies, total_score)
+   - Adds `topic` field to each tweet
+   - Saves to intermediate file: `intermediate_scraped_{timestamp}.json`
+   - Returns file path or None on failure
+
+3. **Stage 2: Media Descriptions** (orchestrator.py:252-287):
+   - Skips if `media_descriptions.enabled` is false in config
+   - Instantiates MediaDescriptionGenerator class
+   - Processes all media items across all tweets
+   - Saves to intermediate file: `intermediate_described_{timestamp}.json`
+   - Returns file path or None on failure
+
+4. **Stage 3: Hook Generation** (orchestrator.py:289-324):
+   - Skips if `hook_generation.enabled` is false in config
+   - Instantiates HookGenerator class
+   - Generates 10 hooks per tweet (configurable)
+   - Saves to intermediate file: `intermediate_with_hooks_{timestamp}.json`
+   - Returns file path or None on failure
+
+5. **Stage 4: Hook Selection** (orchestrator.py:326-396):
+   - If Slack disabled or --skip-slack flag: calls `_auto_select_hooks()`
+   - If Slack enabled: instantiates SlackIntegration and posts to channel
+   - Auto-selection: selects hooks at indices from config (default: [0, 4, 9])
+   - Adds `selected_hooks`, `selected_hook_indices`, `selection_method`, `selection_timestamp` to each tweet
+   - Falls back to auto-selection on Slack failure
+   - Saves to intermediate file: `intermediate_selected_{timestamp}.json`
+   - Returns file path or None on failure
+
+6. **Stage 5: Media Download** (orchestrator.py:398-455):
+   - Skips if `media_download.enabled` is false in config
+   - Instantiates MediaDownloader class
+   - Downloads all media items across all tweets with progress bars
+   - Adds `local_path` field to each media object
+   - On download failure: adds `local_path: null` and `download_error` field
+   - Saves to final output file: `orchestrator_output_{timestamp}.json`
+   - Returns file path or None on failure
+
+7. **Checkpointing & Resume** (orchestrator.py:137-165, 506-520):
+   - Saves checkpoint after each stage to `orchestrator_checkpoint.json`
+   - Checkpoint contains: current_stage, completed_stages, failed_stages, intermediate_files
+   - Resume from specific stage using --resume-from flag
+   - Loads checkpoint on initialization if resume.enabled is true
+
+8. **Output & Summary** (orchestrator.py:522-570):
+   - Prints execution summary with duration, completed stages
+   - Displays statistics: total tweets, media items, downloaded files, hooks generated/selected
+   - Final output ready for video generation
 
 **Tweet Scraping Workflow:**
 
@@ -460,7 +595,49 @@ Weighted formula prioritizes retweets (2x multiplier) as strongest signal of vir
 
 ## Configuration
 
-### Topics Customization
+### Orchestrator Configuration
+
+**Primary configuration file:** `orchestrator_config.json`
+
+Key configuration sections:
+- `scraper.topics`: Array of search topics (e.g., ["viral sports moments", "funny animals"])
+- `scraper.max_tweets_per_topic`: Number of tweets to scrape per topic (default: 20)
+- `scraper.search_type`: "Top" for trending or "Latest" for most recent (default: "Top")
+- `scraper.min_engagement`: Engagement thresholds for filtering tweets
+  - `likes`: Minimum likes required (default: 1000)
+  - `retweets`: Minimum retweets required (default: 100)
+  - `replies`: Minimum replies required (default: 50)
+  - `total_score`: Minimum engagement score (default: 1500)
+- `scraper.time_range`: Time range for tweet search (default: "7 days")
+- `media_descriptions.enabled`: Enable/disable AI descriptions (default: true)
+- `hook_generation.enabled`: Enable/disable hook generation (default: true)
+- `hook_generation.hooks_per_tweet`: Number of hooks to generate (default: 10)
+- `slack_integration.enabled`: Enable/disable Slack selection (default: true)
+- `slack_integration.poll_interval_seconds`: How often to check for Slack replies (default: 10)
+- `slack_integration.timeout_minutes`: Max time to wait for selections (default: 60)
+- `slack_integration.auto_select_if_disabled`: Auto-select if Slack disabled (default: true)
+- `slack_integration.auto_select_indices`: Which hooks to auto-select (default: [0, 4, 9])
+- `media_download.enabled`: Enable/disable media download (default: true)
+- `media_download.parallel_downloads`: Number of concurrent downloads (default: 5)
+- `output.save_intermediate_files`: Save stage outputs for debugging (default: true)
+- `output.intermediate_directory`: Where to save intermediate files (default: "./intermediate")
+- `logging.log_level`: Logging verbosity - DEBUG, INFO, WARNING, ERROR (default: "INFO")
+- `resume.enabled`: Enable checkpoint/resume functionality (default: true)
+
+Example minimal configuration:
+```json
+{
+  "scraper": {
+    "topics": ["trending tech", "viral content"],
+    "max_tweets_per_topic": 15
+  },
+  "slack_integration": {
+    "enabled": false
+  }
+}
+```
+
+### Topics Customization (Manual Scripts)
 Edit the `topics` list in `main()` (scraper.py:173-177):
 ```python
 topics = [
@@ -532,7 +709,16 @@ Edit `video_config.json` to customize video generation settings:
 
 All JSON outputs and video files are excluded from git via .gitignore:
 
-**Tweet Data Files:**
+**Orchestrator Output Files:**
+- `orchestrator_output_*.json` - Complete dataset from automated pipeline with local media paths
+- `orchestrator.log` - Detailed execution log with timestamps and error messages
+- `orchestrator_checkpoint.json` - Pipeline state for resume capability (auto-saved after each stage)
+- `intermediate/intermediate_scraped_*.json` - Stage 1 output (if save_intermediate_files enabled)
+- `intermediate/intermediate_described_*.json` - Stage 2 output (if save_intermediate_files enabled)
+- `intermediate/intermediate_with_hooks_*.json` - Stage 3 output (if save_intermediate_files enabled)
+- `intermediate/intermediate_selected_*.json` - Stage 4 output (if save_intermediate_files enabled)
+
+**Manual Pipeline Tweet Data Files:**
 - `trending_tweets_*.json` - Raw scraped tweet data with media URLs
 - `*_described.json` - Processed files with AI-generated media descriptions
 - `*_with_hooks.json` - Processed files with viral Instagram reel hooks (10 options per tweet)
@@ -557,4 +743,11 @@ All JSON outputs and video files are excluded from git via .gitignore:
 - `anthropic>=0.39.0` - Anthropic API client for Claude 4.5 Sonnet (hook generation)
 - `slack-sdk>=3.0.0` - Slack SDK for posting messages and polling thread replies (hook selection)
 - `requests>=2.31.0` - HTTP library for downloading media files with streaming support
-- `tqdm>=4.66.0` - Progress bar library for download tracking
+- `tqdm>=4.66.0` - Progress bar library for download tracking and orchestrator progress
+
+**Orchestrator uses all existing scripts:**
+- `scraper.py` - TwitterTrendingScraper class for stage 1
+- `add_media_descriptions.py` - MediaDescriptionGenerator class for stage 2
+- `hook_creation.py` - HookGenerator class for stage 3
+- `slack_integration.py` - SlackIntegration class for stage 4
+- `media_downloader.py` - MediaDownloader class for stage 5
