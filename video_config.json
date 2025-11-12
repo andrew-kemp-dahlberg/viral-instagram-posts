@@ -13,9 +13,9 @@
 
   "assets": {
     "tweet_boxes": {
-      "1_liner": "assets/tweet_boxes/tweet_1liner.png",
-      "2_liner": "assets/tweet_boxes/tweet_2liner.png",
-      "3_liner": "assets/tweet_boxes/tweet_3liner.png"
+      "1_liner": "assets/tweet_boxes/profitwithkam/1-line.png",
+      "2_liner": "assets/tweet_boxes/profitwithkam/2-line.png",
+        "3_liner": "assets/tweet_boxes/profitwithkam/3-line.png"
     },
     "fonts": {
       "hook_text": {
