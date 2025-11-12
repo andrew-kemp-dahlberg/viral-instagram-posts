@@ -258,17 +258,17 @@ class PipelineOrchestrator:
             self.logger.info(f"Search type: {search_type}")
 
             # Initialize scraper
-            scraper = TwitterTrendingScraper()
+            apify_token = os.getenv("APIFY_API_TOKEN")
+            scraper = TwitterTrendingScraper(apify_token)
 
             # Scrape tweets for all topics
             all_results = {}
             for topic in tqdm(topics, desc="Scraping topics"):
                 self.logger.info(f"Scraping tweets for topic: '{topic}'")
                 results = scraper.search_trending_tweets(
-                    queries=[topic],
+                    topics=[topic],
                     max_tweets=max_tweets,
-                    search_type=search_type,
-                    top_n=max_tweets
+                    search_type=search_type
                 )
                 all_results[topic] = results.get(topic, [])
 

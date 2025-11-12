@@ -6,19 +6,19 @@
 
   "scraper": {
     "topics": [
-      "viral sports moments",
-      "funny animals",
-      "unexpected moments"
+      "crypto",
+      "finance",
+      "trading"
     ],
-    "max_tweets_per_topic": 20,
+    "max_tweets_per_topic": 3,
     "search_type": "Top",
     "min_engagement": {
-      "likes": 1000,
-      "retweets": 100,
+      "likes": 100,
+      "retweets": 50,
       "replies": 50,
-      "total_score": 1500
+      "total_score": 0
     },
-    "time_range": "7 days"
+    "time_range": "1 day"
   },
 
   "media_descriptions": {
@@ -40,7 +40,7 @@
     "poll_interval_seconds": 10,
     "timeout_minutes": 60,
     "selections_required": 3,
-    "auto_select_if_disabled": true,
+    "auto_select_if_disabled": false,
     "auto_select_indices": [0, 4, 9]
   },
 
