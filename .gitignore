@@ -41,6 +41,14 @@ env/
 
 # Output files
 trending_tweets_*.json
+*_described.json
+*_with_hooks.json
+*_selected.json
+orchestrator_output_*.json
+orchestrator_checkpoint.json
+
+# Intermediate files
+intermediate/
 
 # Video generation
 cache/

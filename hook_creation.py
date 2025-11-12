@@ -141,9 +141,10 @@ Format your response as a numbered list (1-10), one hook per line."""
     def process_json_file(self, input_path: str, output_path: str = None) -> None:
         """
         Process a JSON file and add hooks to all tweets.
+        Expects a flat list of tweet objects.
 
         Args:
-            input_path: Path to input JSON file
+            input_path: Path to input JSON file (must be a list of tweets)
             output_path: Path to output JSON file (optional)
         """
         # Load the JSON data
@@ -151,37 +152,37 @@ Format your response as a numbered list (1-10), one hook per line."""
         with open(input_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
-        total_tweets = sum(len(tweets) for tweets in data.values())
-        print(f"Found {total_tweets} tweets across {len(data)} topics")
+        if not isinstance(data, list):
+            raise ValueError(f"Expected a list of tweets, got {type(data).__name__}")
 
-        # Process each topic
+        total_tweets = len(data)
+        print(f"Found {total_tweets} tweets")
+
+        # Process each tweet
         processed_count = 0
-        for topic, tweets in data.items():
-            print(f"\nProcessing topic: {topic}")
-            print(f"  {len(tweets)} tweets")
+        for i, tweet in enumerate(data, 1):
+            topic = tweet.get('topic', 'unknown')
+            print(f"  [{i}/{total_tweets}] Generating hooks (topic: {topic})...", end=" ")
 
-            for i, tweet in enumerate(tweets, 1):
-                print(f"  Generating hooks for tweet {i}/{len(tweets)}...", end=" ")
+            # Extract tweet text
+            tweet_text = tweet.get('text', tweet.get('full_text', ''))
 
-                # Extract tweet text
-                tweet_text = tweet.get('text', tweet.get('full_text', ''))
+            # Extract media descriptions
+            media_descriptions = []
+            if 'media' in tweet and isinstance(tweet['media'], list):
+                for media_item in tweet['media']:
+                    if isinstance(media_item, dict) and 'description' in media_item:
+                        media_descriptions.append(media_item['description'])
 
-                # Extract media descriptions
-                media_descriptions = []
-                if 'media' in tweet and isinstance(tweet['media'], list):
-                    for media_item in tweet['media']:
-                        if isinstance(media_item, dict) and 'description' in media_item:
-                            media_descriptions.append(media_item['description'])
+            # Generate hooks
+            hooks = self.generate_hooks(tweet_text, media_descriptions)
 
-                # Generate hooks
-                hooks = self.generate_hooks(tweet_text, media_descriptions)
-
-                if hooks:
-                    tweet['hooks'] = hooks
-                    print(f"✓ Generated {len(hooks)} hooks")
-                    processed_count += 1
-                else:
-                    print("✗ Failed to generate hooks")
+            if hooks:
+                tweet['hooks'] = hooks
+                print(f"✓ Generated {len(hooks)} hooks")
+                processed_count += 1
+            else:
+                print("✗ Failed to generate hooks")
 
         # Determine output path
         if output_path is None:
