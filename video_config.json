@@ -52,8 +52,8 @@
   "effects": {
     "background_blur": {
       "enabled": true,
-      "sigma": 100,
-      "comment": "Gaussian blur strength (higher = more blur) - increased to 100 for extreme blur"
+      "sigma": 200,
+      "comment": "Gaussian blur strength (higher = more blur) - increased to 200 for extreme blur"
     },
     "media_scaling": {
       "mode": "fit",
@@ -66,15 +66,16 @@
   "positions": {
     "hook_text": {
       "x": "center",
-      "y": 1100,
+      "y": 550,
       "max_width": 1900,
       "alignment": "center",
-      "comment": "Hook text positioned above/on tweet box (tweet box is at y=1200)"
+      "comment": "Hook text positioned above/on tweet box - moved up to y=550"
     },
     "tweet_box": {
       "x": "center",
-      "y": 1200,
-      "comment": "Tweet box positioned higher in frame (was center at 1920, now at 1200)"
+      "y": 600,
+      "scale": 0.75,
+      "comment": "Tweet box positioned higher and scaled to 75% to prevent cutoff"
     },
     "media_overlay": {
       "x": "center",

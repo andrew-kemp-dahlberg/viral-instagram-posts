@@ -85,6 +85,7 @@ class FFmpegGenerator:
         self.hook_text_max_width = self.config['positions']['hook_text']['max_width']
         self.tweet_box_x = self.config['positions']['tweet_box']['x']
         self.tweet_box_y = self.config['positions']['tweet_box']['y']
+        self.tweet_box_scale = self.config['positions']['tweet_box'].get('scale', 1.0)
 
         # Tweet box paths
         self.tweet_boxes = self.config['assets']['tweet_boxes']
@@ -412,8 +413,9 @@ class FFmpegGenerator:
             # Step 6: Apply clarity (eq: brightness=0.02:contrast=1.2)
             f"[sharpened]eq=brightness=0.02:contrast=1.2[enhanced];"
 
-            # Step 7: Overlay tweet box at configured position
-            f"[enhanced][1:v]overlay={tweet_box_x_pos}:{tweet_box_y_pos}[with_box];"
+            # Step 7: Scale tweet box and overlay at configured position
+            f"[1:v]scale=iw*{self.tweet_box_scale}:ih*{self.tweet_box_scale}[scaled_box];"
+            f"[enhanced][scaled_box]overlay={tweet_box_x_pos}:{tweet_box_y_pos}[with_box];"
 
             # Step 8: Add hook text overlay
         )
