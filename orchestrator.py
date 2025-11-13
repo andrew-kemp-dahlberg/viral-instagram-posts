@@ -421,20 +421,18 @@ class PipelineOrchestrator:
 
             self.logger.info(f"Input file: {input_file}")
 
-            # Initialize Slack integration
-            integration = SlackIntegration()
-
             # Process the file
             output_file = self._get_intermediate_path("selected")
+
+            # Initialize Slack integration
+            integration = SlackIntegration(input_file, output_file)
             poll_interval = slack_config.get("poll_interval_seconds", 10)
             timeout_minutes = slack_config.get("timeout_minutes", 60)
 
             self.logger.info(f"Posting tweets to Slack (polling every {poll_interval}s, timeout: {timeout_minutes}m)")
             integration.process_json_file(
-                input_file,
-                output_file,
-                poll_interval=poll_interval,
-                timeout_minutes=timeout_minutes
+                poll_timeout=timeout_minutes * 60,  # Convert minutes to seconds
+                check_interval=poll_interval
             )
 
             self.logger.info(f"Output saved to: {output_file}")
