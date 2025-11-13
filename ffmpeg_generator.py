@@ -72,9 +72,11 @@ class FFmpegGenerator:
         self.video_width = self.config['video']['resolution']['width']
         self.video_height = self.config['video']['resolution']['height']
         self.framerate = self.config['video']['framerate']
-        self.crf = self.config['video']['encoding']['crf']
-        self.preset = self.config['video']['encoding']['preset']
+        self.crf = self.config['video']['encoding'].get('crf', 18)
+        self.preset = self.config['video']['encoding'].get('preset', 'medium')
         self.codec = self.config['video']['encoding']['codec']
+        self.quality = self.config['video']['encoding'].get('quality', 65)
+        self.bitrate = self.config['video']['encoding'].get('bitrate', '10M')
 
         # Effect parameters
         self.blur_sigma = self.config['effects']['background_blur']['sigma']
@@ -429,8 +431,26 @@ class FFmpegGenerator:
 
             # Video encoding settings
             '-c:v', self.codec,
-            '-preset', self.preset,
-            '-crf', str(self.crf),
+        ]
+
+        # Add codec-specific parameters
+        if 'videotoolbox' in self.codec.lower():
+            # Hardware acceleration (VideoToolbox) uses quality and bitrate
+            command.extend([
+                '-q:v', str(self.quality),  # Quality: 1-100, higher=better
+                '-b:v', self.bitrate,  # Bitrate for quality control
+            ])
+            self.logger.info(f"Using hardware acceleration: {self.codec} (quality={self.quality}, bitrate={self.bitrate})")
+        else:
+            # Software encoding (libx264) uses preset and CRF
+            command.extend([
+                '-preset', self.preset,
+                '-crf', str(self.crf),
+            ])
+            self.logger.info(f"Using software encoding: {self.codec} (preset={self.preset}, crf={self.crf})")
+
+        # Common encoding settings
+        command.extend([
             '-r', str(self.framerate),
             '-pix_fmt', 'yuv420p',  # Compatibility with most players
 
@@ -440,7 +460,7 @@ class FFmpegGenerator:
             '-shortest',  # Match shortest stream (important for looped inputs)
 
             output_path
-        ]
+        ])
 
         return command
 

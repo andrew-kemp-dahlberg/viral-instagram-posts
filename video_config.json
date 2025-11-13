@@ -36,10 +36,12 @@
     },
     "framerate": 30,
     "encoding": {
-      "codec": "libx264",
+      "codec": "h264_videotoolbox",
       "preset": "medium",
       "crf": 18,
-      "comment": "CRF 18 = high quality (0=lossless, 51=worst, 18-23=visually lossless)"
+      "quality": 65,
+      "bitrate": "10M",
+      "comment": "h264_videotoolbox uses Apple hardware acceleration (3-8x faster on M-series Macs). Quality: 1-100 (higher=better), 65 is good balance. Falls back to libx264 on non-Mac systems."
     },
     "audio": {
       "codec": "aac",
