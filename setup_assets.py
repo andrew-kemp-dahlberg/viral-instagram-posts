@@ -219,8 +219,8 @@ class AssetSetup:
 
         for box_name, box_path in tweet_boxes.items():
             if os.path.exists(box_path):
-                # Check if it's a valid PNG
-                if box_path.endswith('.png'):
+                # Check if it's a valid PNG (case-insensitive)
+                if box_path.lower().endswith('.png'):
                     file_size = os.path.getsize(box_path)
                     print(f"   ✅ Found: {box_path} ({file_size:,} bytes)")
                 else:

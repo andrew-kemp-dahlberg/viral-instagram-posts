@@ -8,6 +8,8 @@ This script automates the entire workflow for creating viral Instagram content:
 3. Generate 10 viral Instagram hooks per tweet using Claude AI
 4. Collect user's top 3 hook selections via Slack (or auto-select)
 5. Download and cache all media files locally
+6. Validate video generation assets (FFmpeg, fonts, tweet boxes)
+7. Generate Instagram Reel videos for all selected hooks
 
 Usage:
     # Run full pipeline with defaults
@@ -33,6 +35,7 @@ Output:
     - orchestrator.log: Detailed execution log
     - cache/media/*: Downloaded media files
     - intermediate/*: Intermediate JSON files from each stage (if enabled)
+    - output/*.mp4: Generated Instagram Reel videos
 """
 
 import os
@@ -52,6 +55,8 @@ from add_media_descriptions import MediaDescriptionGenerator
 from hook_creation import HookGenerator
 from slack_integration import SlackIntegration
 from media_downloader import MediaDownloader
+from setup_assets import AssetSetup
+from ffmpeg_generator import FFmpegGenerator
 
 
 class PipelineOrchestrator:
@@ -68,7 +73,9 @@ class PipelineOrchestrator:
         "media_descriptions",
         "hook_generation",
         "slack_integration",
-        "media_download"
+        "media_download",
+        "asset_setup",
+        "video_generation"
     ]
 
     def __init__(self, config_path: str = "orchestrator_config.json"):
@@ -560,6 +567,193 @@ class PipelineOrchestrator:
             self.logger.error(f"Stage 5 failed: {e}", exc_info=True)
             return None
 
+    def run_stage_asset_setup(self, input_file: str) -> Optional[str]:
+        """
+        Stage 6: Validate video generation assets and environment.
+
+        Args:
+            input_file: Path to JSON file from media download stage
+
+        Returns:
+            Path to input file (passed through), or None if validation failed
+        """
+        self.logger.info("=" * 80)
+        self.logger.info("STAGE 6: Asset Setup & Validation")
+        self.logger.info("=" * 80)
+
+        try:
+            asset_config = self.config.get("asset_setup", {})
+            if not asset_config.get("enabled", True):
+                self.logger.info("Asset setup disabled, skipping...")
+                return input_file
+
+            self.logger.info("Validating video generation environment...")
+
+            # Initialize asset setup
+            video_config_path = asset_config.get("video_config_path", "video_config.json")
+            asset_setup = AssetSetup(config_file=video_config_path)
+
+            # Run validation checks
+            ffmpeg_ok, ffmpeg_msg = asset_setup.check_ffmpeg()
+            fonts_ok, available_fonts = asset_setup.check_fonts()
+            dirs_ok = asset_setup.create_directories()
+            boxes_ok, missing_boxes = asset_setup.check_tweet_boxes()
+
+            # Check if all validations passed
+            all_passed = all([ffmpeg_ok, fonts_ok, dirs_ok, boxes_ok])
+
+            if not all_passed:
+                self.logger.error("Asset validation failed!")
+                if not ffmpeg_ok:
+                    self.logger.error(f"  FFmpeg: {ffmpeg_msg}")
+                if not fonts_ok:
+                    self.logger.error("  Fonts: No configured fonts found")
+                if not dirs_ok:
+                    self.logger.error("  Directories: Failed to create required directories")
+                if not boxes_ok:
+                    self.logger.error(f"  Tweet boxes: Missing {len(missing_boxes)} box(es): {missing_boxes}")
+
+                # If strict validation is enabled, fail the stage
+                if asset_config.get("strict_validation", True):
+                    self.logger.error("Strict validation enabled - stopping pipeline")
+                    return None
+                else:
+                    self.logger.warning("Strict validation disabled - continuing despite warnings")
+
+            self.logger.info("Asset validation completed successfully ✓")
+            return input_file
+
+        except Exception as e:
+            self.logger.error(f"Stage 6 failed: {e}", exc_info=True)
+            return None
+
+    def run_stage_video_generation(self, input_file: str) -> Optional[str]:
+        """
+        Stage 7: Generate Instagram Reel videos for all selected hooks.
+
+        Args:
+            input_file: Path to JSON file with selected hooks and local media paths
+
+        Returns:
+            Path to final output file with video paths added, or None if failed
+        """
+        self.logger.info("=" * 80)
+        self.logger.info("STAGE 7: Video Generation")
+        self.logger.info("=" * 80)
+
+        try:
+            video_config = self.config.get("video_generation", {})
+            if not video_config.get("enabled", True):
+                self.logger.info("Video generation disabled, skipping...")
+                return input_file
+
+            self.logger.info(f"Input file: {input_file}")
+
+            # Initialize video generator
+            video_config_path = video_config.get("video_config_path", "video_config.json")
+            generator = FFmpegGenerator(config_path=video_config_path)
+
+            # Load tweets with selected hooks
+            with open(input_file, 'r') as f:
+                tweets = json.load(f)
+
+            # Count total videos to generate
+            total_videos = sum(len(tweet.get("selected_hooks", [])) for tweet in tweets)
+            self.logger.info(f"Generating {total_videos} videos from {len(tweets)} tweets")
+
+            # Get output directory from config
+            output_dir = video_config.get("output_dir", "./output/videos")
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+            # Generate videos
+            generated_count = 0
+            failed_count = 0
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            for tweet_idx, tweet in enumerate(tqdm(tweets, desc="Processing tweets")):
+                # Get media with local path
+                media_items = tweet.get("media", [])
+                if not media_items:
+                    self.logger.warning(f"Tweet {tweet_idx} has no media, skipping video generation")
+                    continue
+
+                # Use first media item (primary media)
+                primary_media = media_items[0]
+                media_local_path = primary_media.get("local_path")
+
+                if not media_local_path or not os.path.exists(media_local_path):
+                    self.logger.warning(f"Tweet {tweet_idx} has no valid local media path, skipping")
+                    continue
+
+                # Generate video for each selected hook
+                selected_hooks = tweet.get("selected_hooks", [])
+                tweet["generated_videos"] = []
+
+                for hook_idx, hook_text in enumerate(selected_hooks):
+                    # Build output filename
+                    tweet_topic = tweet.get("topic", "unknown").replace(" ", "_")
+                    video_filename = f"{tweet_topic}_tweet{tweet_idx}_hook{hook_idx}_{timestamp}.mp4"
+                    video_output_path = os.path.join(output_dir, video_filename)
+
+                    self.logger.info(f"Generating video {generated_count + 1}/{total_videos}: {video_filename}")
+
+                    try:
+                        # Generate video
+                        success = generator.generate_single_variant(
+                            media_path=media_local_path,
+                            hook_text=hook_text,
+                            output_path=video_output_path
+                        )
+
+                        if success:
+                            # Add video path to tweet data
+                            tweet["generated_videos"].append({
+                                "hook_index": hook_idx,
+                                "hook_text": hook_text,
+                                "video_path": video_output_path,
+                                "media_source": media_local_path,
+                                "generated_at": datetime.now().isoformat()
+                            })
+                            generated_count += 1
+                        else:
+                            self.logger.error(f"Failed to generate video: {video_filename}")
+                            tweet["generated_videos"].append({
+                                "hook_index": hook_idx,
+                                "hook_text": hook_text,
+                                "video_path": None,
+                                "error": "Video generation failed",
+                                "media_source": media_local_path
+                            })
+                            failed_count += 1
+
+                    except Exception as e:
+                        self.logger.error(f"Error generating video {video_filename}: {e}")
+                        tweet["generated_videos"].append({
+                            "hook_index": hook_idx,
+                            "hook_text": hook_text,
+                            "video_path": None,
+                            "error": str(e),
+                            "media_source": media_local_path
+                        })
+                        failed_count += 1
+
+            self.logger.info(f"Generated {generated_count} videos successfully")
+            if failed_count > 0:
+                self.logger.warning(f"Failed to generate {failed_count} videos")
+
+            # Save final output with video paths
+            output_file = self._get_final_output_path()
+            with open(output_file, 'w') as f:
+                json.dump(tweets, f, indent=2)
+
+            self.logger.info(f"Final output with video paths saved to: {output_file}")
+
+            return output_file
+
+        except Exception as e:
+            self.logger.error(f"Stage 7 failed: {e}", exc_info=True)
+            return None
+
     def _save_intermediate_file(self, data: Any, stage_name: str) -> str:
         """Save intermediate data to a JSON file."""
         output_config = self.config.get("output", {})
@@ -652,6 +846,10 @@ class PipelineOrchestrator:
                     current_file = self.run_stage_slack_integration(current_file, skip_slack)
                 elif stage_name == "media_download":
                     current_file = self.run_stage_media_download(current_file)
+                elif stage_name == "asset_setup":
+                    current_file = self.run_stage_asset_setup(current_file)
+                elif stage_name == "video_generation":
+                    current_file = self.run_stage_video_generation(current_file)
 
                 if current_file is None:
                     self.logger.error(f"Stage {stage_name} failed")
@@ -698,6 +896,17 @@ class PipelineOrchestrator:
                 if media.get("local_path")
             )
 
+            # Count generated videos
+            generated_videos = sum(
+                len(tweet.get("generated_videos", []))
+                for tweet in tweets
+            )
+            successful_videos = sum(
+                1 for tweet in tweets
+                for video in tweet.get("generated_videos", [])
+                if video.get("video_path") and os.path.exists(video.get("video_path"))
+            )
+
             self.logger.info("")
             self.logger.info("Statistics:")
             self.logger.info(f"  Total tweets processed: {total_tweets}")
@@ -705,10 +914,14 @@ class PipelineOrchestrator:
             self.logger.info(f"  Media files downloaded: {downloaded_media}")
             self.logger.info(f"  Hooks generated: {total_tweets * 10}")
             self.logger.info(f"  Hooks selected: {total_tweets * 3}")
+            self.logger.info(f"  Videos generated: {successful_videos}/{generated_videos}")
             self.logger.info("")
             self.logger.info(f"Final output: {final_output}")
             self.logger.info("")
-            self.logger.info("Ready for video generation!")
+            if successful_videos > 0:
+                self.logger.info(f"All done! Generated {successful_videos} Instagram Reels!")
+            else:
+                self.logger.info("Pipeline completed!")
 
         except Exception as e:
             self.logger.warning(f"Could not load final output for statistics: {e}")

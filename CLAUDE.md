@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Python toolkit that scrapes trending tweets from Twitter/X using the Apify platform, transforms them into viral Instagram content, and prepares for video generation. The project searches for tweets on customizable topics, ranks them by engagement metrics (likes, retweets, replies), generates AI-powered media descriptions and Instagram hooks, enables team selection via Slack, and provides infrastructure for Instagram Reel video generation. Filters out retweets to focus on original content and extracts media URLs (images, videos) from tweets.
 
-**Key Feature:** The `orchestrator.py` script automates the entire workflow end-to-end with a single command, handling scraping, AI descriptions, hook generation, selection, and media download with comprehensive error handling, checkpointing, and resume capability.
+**Key Feature:** The `orchestrator.py` script automates the entire workflow end-to-end with a single command, handling scraping, AI descriptions, hook generation, selection, media download, asset validation, and video generation with comprehensive error handling, checkpointing, and resume capability.
 
 ## Development Commands
 
@@ -31,12 +31,14 @@ python orchestrator.py --config my_config.json
 python orchestrator.py --resume-from media_download
 ```
 
-The orchestrator chains all 5 pipeline stages:
+The orchestrator chains all 7 pipeline stages:
 1. **Scraper** - Collects trending tweets using Apify
 2. **Media Descriptions** - Adds AI descriptions (GPT-4o + Gemini)
 3. **Hook Generation** - Creates 10 viral hooks per tweet (Claude)
 4. **Slack Integration** - Collects user selections or auto-selects
 5. **Media Download** - Downloads and caches all media files
+6. **Asset Setup** - Validates FFmpeg, fonts, tweet boxes for video generation
+7. **Video Generation** - Creates Instagram Reel videos for all selected hooks
 
 Configuration via `orchestrator_config.json`:
 - `scraper.topics` - List of topics to search
@@ -44,12 +46,17 @@ Configuration via `orchestrator_config.json`:
 - `scraper.min_engagement` - Engagement thresholds (likes, retweets, replies)
 - `slack_integration.enabled` - Enable/disable Slack selection
 - `slack_integration.auto_select_indices` - Which hooks to auto-select [0, 4, 9]
+- `asset_setup.enabled` - Enable/disable asset validation
+- `asset_setup.strict_validation` - Stop pipeline if assets missing (default: true)
+- `video_generation.enabled` - Enable/disable video generation
+- `video_generation.output_dir` - Where to save generated videos
 - `output.save_intermediate_files` - Save stage outputs for debugging
 
 Output:
-- `orchestrator_output_{timestamp}.json` - Final dataset with local media paths
+- `orchestrator_output_{timestamp}.json` - Final dataset with local media paths and video paths
 - `orchestrator.log` - Detailed execution log
 - `cache/media/*` - Downloaded media files
+- `output/videos/*.mp4` - Generated Instagram Reel videos
 - `intermediate/*` - Stage outputs (if enabled)
 - `orchestrator_checkpoint.json` - Resume state (auto-saved)
 
@@ -243,8 +250,8 @@ success = generator.generate_single_variant(
 - Configuration loaded from orchestrator_config.json with sections for each stage
 - Logs all operations to orchestrator.log with INFO level
 - CLI interface with argparse: --dry-run, --skip-slack, --resume-from, --config
-- Stops after media download stage (does not include video generation)
-- Output: orchestrator_output_{timestamp}.json with complete dataset and local media paths
+- Includes all 7 stages from scraping to video generation
+- Output: orchestrator_output_{timestamp}.json with complete dataset, local media paths, and generated video paths
 
 **TwitterTrendingScraper class** (scraper.py:17-152)
 - Main orchestrator for Twitter data collection
@@ -400,25 +407,50 @@ success = generator.generate_single_variant(
    - Saves to intermediate file: `intermediate_selected_{timestamp}.json`
    - Returns file path or None on failure
 
-6. **Stage 5: Media Download** (orchestrator.py:398-455):
+6. **Stage 5: Media Download** (orchestrator.py:490-561):
    - Skips if `media_download.enabled` is false in config
    - Instantiates MediaDownloader class
    - Downloads all media items across all tweets with progress bars
    - Adds `local_path` field to each media object
    - On download failure: adds `local_path: null` and `download_error` field
-   - Saves to final output file: `orchestrator_output_{timestamp}.json`
+   - Saves to intermediate file: `intermediate_downloaded_{timestamp}.json`
    - Returns file path or None on failure
 
-7. **Checkpointing & Resume** (orchestrator.py:137-165, 506-520):
+7. **Stage 6: Asset Setup** (orchestrator.py:570-628):
+   - Skips if `asset_setup.enabled` is false in config
+   - Instantiates AssetSetup class
+   - Validates FFmpeg installation in PATH
+   - Checks for system fonts (Arial, Helvetica, Liberation Sans)
+   - Creates required directory structure (assets/, cache/, output/)
+   - Validates presence of 3 tweet box PNG files (1-liner, 2-liner, 3-liner)
+   - If `strict_validation` is true: stops pipeline if any validation fails
+   - If `strict_validation` is false: continues with warnings
+   - Returns input file path (pass-through) or None on failure
+
+8. **Stage 7: Video Generation** (orchestrator.py:630-755):
+   - Skips if `video_generation.enabled` is false in config
+   - Instantiates FFmpegGenerator class
+   - Loads tweets with selected hooks and local media paths
+   - For each tweet with media:
+     - Uses first media item as primary source
+     - Generates video for each of the 3 selected hooks
+     - Builds output filename: `{topic}_tweet{idx}_hook{idx}_{timestamp}.mp4`
+     - Calls `generate_single_variant()` to create video with FFmpeg
+     - Adds `generated_videos` array to tweet with video paths
+   - Tracks successful and failed video generations
+   - Saves final output file: `orchestrator_output_{timestamp}.json`
+   - Returns file path or None on failure
+
+9. **Checkpointing & Resume** (orchestrator.py:151-171, 635-642):
    - Saves checkpoint after each stage to `orchestrator_checkpoint.json`
    - Checkpoint contains: current_stage, completed_stages, failed_stages, intermediate_files
    - Resume from specific stage using --resume-from flag
    - Loads checkpoint on initialization if resume.enabled is true
 
-8. **Output & Summary** (orchestrator.py:522-570):
-   - Prints execution summary with duration, completed stages
-   - Displays statistics: total tweets, media items, downloaded files, hooks generated/selected
-   - Final output ready for video generation
+10. **Output & Summary** (orchestrator.py:877-927):
+    - Prints execution summary with duration, completed stages
+    - Displays statistics: total tweets, media items, downloaded files, hooks generated/selected, videos generated
+    - Final output contains complete dataset with video paths ready for publishing
 
 **Tweet Scraping Workflow:**
 

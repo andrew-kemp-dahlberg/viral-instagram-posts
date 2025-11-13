@@ -18,13 +18,13 @@ A Python toolkit to find trending tweets on customizable topics using Apify's Tw
 - 📲 Send tweets to Slack for team review with rich formatting
 - ✅ Select top 3 hooks via Slack thread replies for each tweet
 - 💾 Smart caching system with TTL to avoid re-downloading media
-- 🎬 Generate Instagram Reel videos with hooks, tweets, and media (coming soon)
+- 🎬 Generate Instagram Reel videos with hooks, tweets, and media using FFmpeg
 - 🚀 **Automated pipeline orchestrator** to run the entire workflow end-to-end
 
 ## Prerequisites
 
 1. **Python 3.7+** installed on your system
-2. **FFmpeg** (for video generation, optional)
+2. **FFmpeg** (required for video generation)
    - macOS: `brew install ffmpeg`
    - Ubuntu/Debian: `sudo apt install ffmpeg`
    - Windows: Download from https://ffmpeg.org/download.html
@@ -97,7 +97,7 @@ topics = [
 ]
 ```
 
-4. **Set up video generation assets** (optional, for future video generation feature):
+4. **Set up video generation assets** (required for video generation):
 ```bash
 # Run asset validation and setup
 python setup_assets.py
@@ -107,15 +107,15 @@ This will:
 - ✅ Check if FFmpeg is installed
 - ✅ Verify system fonts (Arial or alternatives)
 - ✅ Create required directory structure (`assets/`, `cache/`, `output/`)
-- ✅ Provide instructions for creating tweet box PNG assets
+- ✅ Validate tweet box PNG assets
 
 **Tweet Box Assets:**
-You'll need to create 3 PNG images for tweet boxes:
-- `assets/tweet_boxes/tweet_1liner.png` - For single-line tweets
-- `assets/tweet_boxes/tweet_2liner.png` - For two-line tweets
-- `assets/tweet_boxes/tweet_3liner.png` - For three-line tweets
+You need 3 PNG images for tweet boxes. Place them in `assets/tweet_boxes/` or update paths in `video_config.json`:
+- 1-line tweet box (e.g., `assets/tweet_boxes/profitwithkam/1-line.PNG`)
+- 2-line tweet box (e.g., `assets/tweet_boxes/profitwithkam/2-line.PNG`)
+- 3-line tweet box (e.g., `assets/tweet_boxes/profitwithkam/3-line.PNG`)
 
-See `assets/tweet_boxes/README.md` for detailed specifications and design guidelines.
+These PNG files should contain a styled tweet box background that will be overlaid on the video. The orchestrator automatically selects the correct box based on the hook text line count.
 
 ## Automated Pipeline (Recommended)
 
@@ -145,11 +145,14 @@ The orchestrator will:
 4. 🎣 **Create hooks** - Generate 10 viral Instagram hooks per tweet (Claude AI)
 5. ✅ **Select hooks** - Collect selections via Slack or auto-select top 3
 6. 📥 **Download media** - Cache all media files locally with progress tracking
+7. 🔧 **Validate assets** - Check FFmpeg, fonts, and tweet box PNG files
+8. 🎬 **Generate videos** - Create Instagram Reel videos for all selected hooks
 
 **Output:**
-- `orchestrator_output_TIMESTAMP.json` - Complete dataset ready for video generation
+- `orchestrator_output_TIMESTAMP.json` - Complete dataset with video paths
 - `orchestrator.log` - Detailed execution log
 - `cache/media/*` - All downloaded media files
+- `output/videos/*.mp4` - Generated Instagram Reel videos
 - `intermediate/*` - Stage outputs for debugging (optional)
 
 **Configuration:**
@@ -160,6 +163,8 @@ Edit `orchestrator_config.json` to customize:
 - **Engagement filters** - Set minimum likes, retweets, replies
 - **Slack settings** - Poll interval, timeout duration
 - **Auto-selection** - Choose which hook indices to auto-select (default: 0, 4, 9)
+- **Asset validation** - Enable/disable strict validation for video generation
+- **Video output** - Configure output directory for generated videos
 
 Example configuration:
 ```json
@@ -175,6 +180,14 @@ Example configuration:
   "slack_integration": {
     "enabled": true,
     "timeout_minutes": 60
+  },
+  "asset_setup": {
+    "enabled": true,
+    "strict_validation": true
+  },
+  "video_generation": {
+    "enabled": true,
+    "output_dir": "./output/videos"
   }
 }
 ```
@@ -186,7 +199,7 @@ If the pipeline fails at any stage, it saves a checkpoint. Resume from where it 
 python orchestrator.py --resume-from hook_generation
 ```
 
-Available stages: `scraper`, `media_descriptions`, `hook_generation`, `slack_integration`, `media_download`
+Available stages: `scraper`, `media_descriptions`, `hook_generation`, `slack_integration`, `media_download`, `asset_setup`, `video_generation`
 
 ---
 

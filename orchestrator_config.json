@@ -52,6 +52,21 @@
     "timeout_seconds": 30
   },
 
+  "asset_setup": {
+    "enabled": true,
+    "video_config_path": "video_config.json",
+    "strict_validation": true,
+    "comment": "strict_validation=true will stop pipeline if FFmpeg, fonts, or tweet boxes are missing"
+  },
+
+  "video_generation": {
+    "enabled": true,
+    "video_config_path": "video_config.json",
+    "output_dir": "./output/videos",
+    "parallel_generation": false,
+    "comment": "parallel_generation not yet implemented - videos are generated sequentially"
+  },
+
   "output": {
     "directory": "./output",
     "filename_prefix": "orchestrator_output",
