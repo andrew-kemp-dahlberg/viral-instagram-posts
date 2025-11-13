@@ -264,7 +264,7 @@ class SlackIntegration:
                 "elements": [
                     {
                         "type": "mrkdwn",
-                        "text": "💡 Reply to this thread with 3 numbers (e.g., '1, 5, 9')"
+                        "text": "💡 Reply with 3 numbers (e.g., '1, 5, 9') to select hooks\n🚫 Reply with 'skip' or 'cancel' to exclude this tweet"
                     }
                 ]
             })
@@ -280,22 +280,30 @@ class SlackIntegration:
         Args:
             timeout: Maximum time to wait in seconds (default: 1 hour)
             check_interval: How often to check for replies in seconds
+
+        Returns:
+            Tuple of (selections, excluded_tweets)
+            - selections: {tweet_index: [hook1, hook2, hook3]}
+            - excluded_tweets: set of tweet indices to skip
         """
         print(f"\n⏳ Polling for selections (timeout: {timeout}s, checking every {check_interval}s)")
         print(f"📝 Waiting for {len(self.message_threads)} tweet selections...\n")
+        print(f"💡 Reply with 3 numbers (e.g., '1, 5, 9') to select hooks")
+        print(f"💡 Reply with 'skip' or 'cancel' to exclude off-brand tweets\n")
 
         selections = {}  # {tweet_index: [hook1, hook2, hook3]}
+        excluded_tweets = set()  # Set of tweet indices to skip
         start_time = time.time()
 
-        while len(selections) < len(self.message_threads):
+        while (len(selections) + len(excluded_tweets)) < len(self.message_threads):
             if time.time() - start_time > timeout:
-                print(f"⏰ Timeout reached. Got {len(selections)}/{len(self.message_threads)} selections.")
+                print(f"⏰ Timeout reached. Got {len(selections)} selections and {len(excluded_tweets)} excluded.")
                 break
 
             # Check each thread for replies
             for tweet_idx, thread_info in self.message_threads.items():
-                if tweet_idx in selections:
-                    continue  # Already got selection for this tweet
+                if tweet_idx in selections or tweet_idx in excluded_tweets:
+                    continue  # Already processed this tweet
 
                 try:
                     # Get thread replies
@@ -310,7 +318,12 @@ class SlackIntegration:
                         text = msg.get("text", "")
                         parsed = self._parse_selection(text)
 
-                        if parsed and len(parsed) == 3:
+                        if parsed == "SKIP":
+                            # User wants to skip this tweet
+                            excluded_tweets.add(tweet_idx)
+                            print(f"🚫 Tweet #{tweet_idx + 1}: Excluded (off-brand/cancelled)")
+                            break
+                        elif parsed and len(parsed) == 3:
                             # Validate hook numbers
                             hooks = self.data[tweet_idx].get('hooks', [])
                             if all(1 <= num <= len(hooks) for num in parsed):
@@ -324,24 +337,32 @@ class SlackIntegration:
                     print(f"❌ Error polling thread {tweet_idx}: {e.response['error']}")
 
             # Progress update
-            remaining = len(self.message_threads) - len(selections)
+            remaining = len(self.message_threads) - len(selections) - len(excluded_tweets)
             if remaining > 0:
-                print(f"⏳ Still waiting for {remaining} selections... ({int(time.time() - start_time)}s elapsed)")
+                print(f"⏳ Still waiting for {remaining} responses... ({int(time.time() - start_time)}s elapsed)")
                 time.sleep(check_interval)
 
-        return selections
+        return selections, excluded_tweets
 
-    def _parse_selection(self, text: str) -> Optional[List[int]]:
+    def _parse_selection(self, text: str) -> Optional[List[int]] | str:
         """
         Parse user selection from text like '1, 5, 9' or '1 5 9'.
+        Also detects skip/cancel commands.
 
         Args:
             text: User's reply text
 
         Returns:
-            List of hook numbers (1-indexed) or None if invalid
+            List of hook numbers (1-indexed), "SKIP" for cancelled tweets, or None if invalid
         """
         import re
+
+        # Check for skip/cancel keywords (case-insensitive)
+        text_lower = text.lower().strip()
+        skip_keywords = ['skip', 'cancel', 'pass', 'no', 'skip this', 'cancel this', 'off brand', 'offbrand']
+
+        if any(keyword in text_lower for keyword in skip_keywords):
+            return "SKIP"
 
         # Extract all numbers from the text
         numbers = re.findall(r'\d+', text)
@@ -352,14 +373,19 @@ class SlackIntegration:
 
         return None
 
-    def save_selected_hooks(self, selections: Dict[int, List[int]]):
+    def save_selected_hooks(self, selections: Dict[int, List[int]], excluded_tweets: set = None):
         """
         Save selected hooks to output JSON file.
+        Marks excluded tweets so they can be filtered from further processing.
 
         Args:
             selections: Dictionary mapping tweet index to list of hook numbers
+            excluded_tweets: Set of tweet indices that were cancelled/skipped
         """
         print(f"\n💾 Saving selections to {self.output_file}")
+
+        if excluded_tweets is None:
+            excluded_tweets = set()
 
         # Update data with selected hooks
         for tweet_idx, hook_numbers in selections.items():
@@ -370,12 +396,21 @@ class SlackIntegration:
             # Add selection metadata
             self.data[tweet_idx]['selected_hook_indices'] = hook_numbers
             self.data[tweet_idx]['selection_timestamp'] = datetime.now().isoformat()
+            self.data[tweet_idx]['excluded'] = False
+
+        # Mark excluded tweets
+        for tweet_idx in excluded_tweets:
+            self.data[tweet_idx]['excluded'] = True
+            self.data[tweet_idx]['excluded_reason'] = 'off_brand_or_cancelled'
+            self.data[tweet_idx]['excluded_timestamp'] = datetime.now().isoformat()
+            self.data[tweet_idx]['selected_hooks'] = []  # Empty hooks list
+            print(f"🚫 Marked tweet #{tweet_idx + 1} as excluded")
 
         # Save to file
         with open(self.output_file, 'w', encoding='utf-8') as f:
             json.dump(self.data, f, indent=2, ensure_ascii=False)
 
-        print(f"✅ Saved {len(selections)} selections to {self.output_file}")
+        print(f"✅ Saved {len(selections)} selections and {len(excluded_tweets)} exclusions to {self.output_file}")
         return self.output_file
 
     def process_json_file(self, poll_timeout: int = 3600, check_interval: int = 10):
@@ -400,17 +435,17 @@ class SlackIntegration:
         # Step 1: Send tweets to Slack
         self.send_tweets_to_slack()
 
-        # Step 2: Poll for user selections
-        selections = self.poll_for_selections(
+        # Step 2: Poll for user selections and exclusions
+        selections, excluded_tweets = self.poll_for_selections(
             timeout=poll_timeout,
             check_interval=check_interval
         )
 
-        # Step 3: Save selected hooks
-        if selections:
-            return self.save_selected_hooks(selections)
+        # Step 3: Save selected hooks and excluded tweets
+        if selections or excluded_tweets:
+            return self.save_selected_hooks(selections, excluded_tweets)
         else:
-            print("⚠️  No selections received. Output file not created.")
+            print("⚠️  No selections or exclusions received. Output file not created.")
             return None
 
 

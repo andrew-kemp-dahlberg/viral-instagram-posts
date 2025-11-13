@@ -52,8 +52,10 @@ class TwitterTrendingScraper:
 
             # Prepare the search input for web.harvester/easy-twitter-search-scraper
             # This actor works without authentication
+            # Append 'filter:media' to require tweets with media at API level
+            search_query = f"{topic} filter:media"
             run_input = {
-                "searchQueries": [topic],
+                "searchQueries": [search_query],
                 "tweetsDesired": max_tweets,
                 "excludeImages": False,
                 "excludeLinks": False,

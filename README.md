@@ -7,7 +7,8 @@ A Python toolkit to find trending tweets on customizable topics using Apify's Tw
 - 🔍 Search for tweets on any topic
 - 📊 Filter for "Top" (trending/popular) or "Latest" tweets
 - 🚫 Automatically filters out retweets to focus on original content
-- 🖼️ Extract media URLs (images, videos) from tweets
+- 🖼️ **Requires tweets with media at API level** using Twitter's `filter:media` operator
+- 📥 Extract media URLs (images, videos) from tweets
 - 📥 Download and cache media files with intelligent retry logic and progress tracking
 - 🤖 AI-powered media descriptions using GPT-4o (images) and Gemini (videos)
 - 🎣 Generate viral Instagram reel hooks using Claude 4.5 Sonnet in Parker Doyle's style
@@ -17,6 +18,7 @@ A Python toolkit to find trending tweets on customizable topics using Apify's Tw
 - 🎯 Calculate engagement scores to rank tweets
 - 📲 Send tweets to Slack for team review with rich formatting
 - ✅ Select top 3 hooks via Slack thread replies for each tweet
+- 🚫 **Cancel/skip off-brand tweets** by replying 'skip' or 'cancel' in Slack
 - 💾 Smart caching system with TTL to avoid re-downloading media
 - 🎬 Generate Instagram Reel videos with hooks, tweets, and media using FFmpeg
 - 🚀 **Automated pipeline orchestrator** to run the entire workflow end-to-end
@@ -278,6 +280,17 @@ python slack_integration.py input_with_hooks.json output_selected.json
 3. Type 3 numbers corresponding to your favorite hooks (e.g., "1, 5, 9" or "2 7 10")
 4. The script will automatically detect your selection and save it
 
+**How to skip/cancel off-brand tweets:**
+1. Reply to the tweet thread with one of these keywords:
+   - `skip`
+   - `cancel`
+   - `off brand`
+   - `pass`
+   - `no`
+2. The tweet will be marked as excluded and won't generate videos
+3. Excluded tweets are logged with `"excluded": true` in the output JSON
+4. Video generation stage automatically skips excluded tweets
+
 ### Step 5: Download Media Files (Optional)
 
 The `MediaDownloader` class provides robust downloading and caching for tweet media:
@@ -321,6 +334,62 @@ print(f"Removed {removed} expired files")
 - Each cached file gets a metadata JSON sidecar with download info
 - TTL configurable via `video_config.json` → `processing.cache_ttl_hours`
 - All downloads logged to `media_download.log`
+
+### Step 6: Video Generation & Customization
+
+The video generator creates Instagram Reels with a professional layered effect:
+
+**Visual Layer Structure:**
+1. **Blurred Background** (bottom layer) - Extremely blurred at sigma=100 for color-scheme-only effect
+2. **Clear Media** (middle layer) - Sharp, centered image/video with clarity enhancements
+3. **Tweet Box** (upper layer) - PNG overlay positioned at y=1200 (higher in frame)
+4. **Hook Text** (top layer) - Black text positioned at y=1100 (just above tweet box)
+
+**Key Configuration Options** (`video_config.json`):
+
+```json
+{
+  "effects": {
+    "background_blur": {
+      "sigma": 100,
+      "comment": "Extreme blur - only shows color scheme, not details"
+    }
+  },
+  "positions": {
+    "hook_text": {
+      "y": 1100,
+      "comment": "Positioned on tweet box area"
+    },
+    "tweet_box": {
+      "y": 1200,
+      "comment": "Moved higher in frame for better composition"
+    }
+  },
+  "video": {
+    "resolution": {
+      "width": 2160,
+      "height": 3840,
+      "comment": "4K vertical (9:16) for Instagram Reels"
+    },
+    "encoding": {
+      "codec": "h264_videotoolbox",
+      "quality": 65,
+      "comment": "Hardware acceleration on M-series Macs"
+    }
+  }
+}
+```
+
+**Image Duration Control:**
+- Static images automatically convert to 5-second videos (Instagram Reel duration)
+- Configurable via `timing.media_duration` in video_config.json
+- Tweet box PNG overlay also limited to 5 seconds to prevent infinite loops
+
+**Performance:**
+- Single-pass filter_complex for optimal speed
+- Hardware acceleration on macOS (VideoToolbox) - 3-8x faster
+- Falls back to libx264 software encoding on other platforms
+- All effects logged to `video_generation.log`
 
 ### Customization Options
 

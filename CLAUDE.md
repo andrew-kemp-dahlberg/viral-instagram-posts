@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A Python toolkit that scrapes trending tweets from Twitter/X using the Apify platform, transforms them into viral Instagram content, and prepares for video generation. The project searches for tweets on customizable topics, ranks them by engagement metrics (likes, retweets, replies), generates AI-powered media descriptions and Instagram hooks, enables team selection via Slack, and provides infrastructure for Instagram Reel video generation. Filters out retweets to focus on original content and extracts media URLs (images, videos) from tweets.
+A Python toolkit that scrapes trending tweets from Twitter/X using the Apify platform, transforms them into viral Instagram content, and prepares for video generation. The project searches for tweets on customizable topics, ranks them by engagement metrics (likes, retweets, replies), generates AI-powered media descriptions and Instagram hooks, enables team selection via Slack, and provides infrastructure for Instagram Reel video generation. **Requires tweets with media at the API level** using Twitter's `filter:media` operator, filters out retweets to focus on original content, and extracts media URLs (images, videos) from tweets.
 
 **Key Feature:** The `orchestrator.py` script automates the entire workflow end-to-end with a single command, handling scraping, AI descriptions, hook generation, selection, media download, asset validation, and video generation with comprehensive error handling, checkpointing, and resume capability.
 
@@ -194,17 +194,15 @@ success = generator.generate_single_variant(
 )
 ```
 
-**Processing Pipeline:**
+**Processing Pipeline (Layered Video Effect):**
 1. Auto-detects media type (image or video)
-2. For images: adds `-loop 1 -t 10` for 10-second duration
-3. Creates blurred background by scaling media to fill 9:16
-4. Applies Gaussian blur (sigma=20)
-5. Scales main media to fit within bounds (90% width, 70% height)
-6. Overlays centered media on blurred background
-7. Applies sharpening (unsharp: 11:11:1.5)
-8. Applies clarity (eq: brightness=0.02:contrast=1.2)
-9. Overlays tweet box PNG (auto-selected by line count)
-10. Adds hook text overlay (72pt, black, centered at y=150)
+2. For images: adds `-loop 1 -t 5` for 5-second duration (Instagram Reel optimized)
+3. **Layer 1 - Blurred Background**: Scales media to fill 9:16 and applies extreme Gaussian blur (sigma=100) for color-scheme-only effect
+4. **Layer 2 - Clear Media**: Scales main media to fit within bounds (90% width, 70% height) and overlays centered on blurred background
+5. Applies sharpening (unsharp: 11:11:1.5)
+6. Applies clarity (eq: brightness=0.02:contrast=1.2)
+7. **Layer 3 - Tweet Box**: Overlays tweet box PNG (auto-selected by line count) at y=1200 (higher in frame for better composition)
+8. **Layer 4 - Hook Text**: Adds hook text overlay (72pt, black) at y=1100 (positioned just above/on tweet box)
 
 **Features:**
 - Single-pass filter_complex for optimal performance
@@ -256,10 +254,16 @@ success = generator.generate_single_variant(
 **TwitterTrendingScraper class** (scraper.py:17-152)
 - Main orchestrator for Twitter data collection
 - Uses Apify's `web.harvester/easy-twitter-search-scraper` actor (no Twitter auth required)
+- **NEW: Media Required at API Level** - Appends `filter:media` to search queries to ensure only tweets with media (images/videos) are returned
 - Three primary methods:
-  - `search_trending_tweets()`: Executes searches and processes results
+  - `search_trending_tweets()`: Executes searches with `filter:media` operator and processes results
   - `display_results()`: Formats output for console display
   - `save_to_json()`: Persists results to timestamped JSON files
+- Key implementation (scraper.py:56):
+  - Constructs search query: `search_query = f"{topic} filter:media"`
+  - Twitter's API filters at source before data reaches scraper
+  - Eliminates post-processing media checks
+  - All returned tweets guaranteed to have media URLs
 
 **MediaDescriptionGenerator class** (add_media_descriptions.py:18-160)
 - Adds AI-generated descriptions to media objects in tweet JSON files
@@ -280,17 +284,24 @@ success = generator.generate_single_variant(
   - `_parse_hooks()`: Parses Claude's response into a list of hooks
   - `process_json_file()`: Processes entire JSON files, adding hooks to all tweets
 
-**SlackIntegration class** (slack_integration.py:23-370)
+**SlackIntegration class** (slack_integration.py:23-450)
 - Sends processed tweets to Slack for user review and hook selection
 - Uses **Slack SDK (WebClient)** with polling-based user interaction
 - Formats tweets with Slack Block Kit for rich presentation
+- **NEW: Skip/Cancel Feature** - Users can exclude off-brand tweets by replying with keywords
 - Five primary methods:
   - `send_tweets_to_slack()`: Posts tweets to Slack grouped by topic with formatted messages
   - `_format_tweet_message()`: Creates Block Kit message with tweet text, engagement metrics, media, and hooks
-  - `poll_for_selections()`: Polls Slack threads for user replies containing hook selections
-  - `_parse_selection()`: Parses user replies like "1, 5, 9" into hook numbers
-  - `save_selected_hooks()`: Adds `selected_hooks` array to JSON with user's top 3 choices
+  - `poll_for_selections()`: Polls Slack threads for user replies containing hook selections OR skip keywords
+  - `_parse_selection()`: Parses user replies like "1, 5, 9" into hook numbers, or "SKIP" for cancel keywords ("skip", "cancel", "off brand", "pass", "no")
+  - `save_selected_hooks()`: Adds `selected_hooks` array to JSON with user's top 3 choices, OR marks tweets as excluded
   - `process_json_file()`: Main orchestrator for send → poll → save workflow
+- Key features:
+  - **Hook Selection**: Reply with 3 numbers (e.g., "1, 5, 9") to select hooks
+  - **Tweet Exclusion**: Reply with "skip", "cancel", or "off brand" to exclude tweets from video generation
+  - **Excluded tweets marked**: Adds `excluded: true`, `excluded_reason: "off_brand_or_cancelled"`, and `excluded_timestamp` fields
+  - **Orchestrator respects exclusions**: Video generation stage automatically skips excluded tweets
+  - **Statistics tracking**: Summary displays excluded tweet count separately from active tweets
 
 **AssetSetup class** (setup_assets.py:18-250)
 - Validates environment and sets up infrastructure for Instagram Reel video generation
@@ -348,15 +359,15 @@ success = generator.generate_single_variant(
   - **Progress tracking**: Parses FFmpeg output to show encoding progress
   - **Dry-run mode**: Preview command without execution
   - **Comprehensive logging**: All operations logged to video_generation.log
-- Filter chain workflow (ffmpeg_generator.py:375-420):
-  1. Scale media to fill 9:16 frame → crop to exact size [bg]
-  2. Apply Gaussian blur (sigma=20) to background [blurred]
-  3. Scale main media to fit bounds (max 90% width, 70% height) [media]
-  4. Overlay centered media on blurred background [with_media]
+- Filter chain workflow (ffmpeg_generator.py:393-419) - **Updated with layered composition**:
+  1. **Blurred Background Layer**: Scale media to fill 9:16 frame → crop to exact size [bg]
+  2. Apply extreme Gaussian blur (sigma=100) to background for color-scheme-only effect [blurred]
+  3. **Clear Media Layer**: Scale main media to fit bounds (max 90% width, 70% height) [media]
+  4. Overlay clear, sharp media centered on blurred background [with_clear_media]
   5. Apply sharpening with unsharp filter (11:11:1.5) [sharpened]
   6. Apply clarity with eq filter (brightness=0.02:contrast=1.2) [enhanced]
-  7. Overlay tweet box PNG (centered) [with_box]
-  8. Add drawtext overlay for hook (72pt, black, centered x, y=150) [final]
+  7. **Tweet Box Layer**: Overlay tweet box PNG at y=1200 (higher in frame, configurable) [with_box]
+  8. **Text Layer**: Add drawtext overlay for hook (72pt, black, x=centered, y=1100) [final]
 - Output specifications:
   - Resolution: 2160x3840 (4K vertical, 9:16 aspect ratio)
   - Codec: libx264 with preset=medium, CRF=18 (near-lossless)
@@ -402,8 +413,10 @@ success = generator.generate_single_variant(
 5. **Stage 4: Hook Selection** (orchestrator.py:326-396):
    - If Slack disabled or --skip-slack flag: calls `_auto_select_hooks()`
    - If Slack enabled: instantiates SlackIntegration and posts to channel
+   - **NEW: Users can skip/cancel off-brand tweets** by replying with keywords ("skip", "cancel", "off brand", "pass", "no")
    - Auto-selection: selects hooks at indices from config (default: [0, 4, 9])
    - Adds `selected_hooks`, `selected_hook_indices`, `selection_method`, `selection_timestamp` to each tweet
+   - For excluded tweets: adds `excluded: true`, `excluded_reason: "off_brand_or_cancelled"`, `excluded_timestamp`
    - Falls back to auto-selection on Slack failure
    - Saves to intermediate file: `intermediate_selected_{timestamp}.json`
    - Returns file path or None on failure
@@ -432,7 +445,8 @@ success = generator.generate_single_variant(
    - Skips if `video_generation.enabled` is false in config
    - Instantiates FFmpegGenerator class
    - Loads tweets with selected hooks and local media paths
-   - For each tweet with media:
+   - **NEW: Automatically skips excluded tweets** (orchestrator.py:674-677) - checks `excluded: true` flag
+   - For each active tweet with media:
      - Uses first media item as primary source
      - Generates video for each of the 3 selected hooks
      - Builds output filename: `{topic}_tweet{idx}_hook{idx}_{timestamp}.mp4`
@@ -448,20 +462,27 @@ success = generator.generate_single_variant(
    - Resume from specific stage using --resume-from flag
    - Loads checkpoint on initialization if resume.enabled is true
 
-10. **Output & Summary** (orchestrator.py:877-927):
+10. **Output & Summary** (orchestrator.py:880-933):
     - Prints execution summary with duration, completed stages
-    - Displays statistics: total tweets, media items, downloaded files, hooks generated/selected, videos generated
+    - Displays statistics:
+      - Total tweets processed
+      - **NEW: Excluded tweets (off-brand)** and active tweets shown separately
+      - Media items, downloaded files
+      - Hooks generated (all tweets) and selected (active tweets only)
+      - Videos generated successfully
     - Final output contains complete dataset with video paths ready for publishing
 
 **Tweet Scraping Workflow:**
 
-1. **Input**: Topics list defined in `main()` function (scraper.py:173-177)
+1. **Input**: Topics list defined in `main()` function (scraper.py:262-264)
 2. **Processing**: For each topic:
-   - Constructs Apify actor run input with search parameters
+   - **NEW: Appends `filter:media` to search query** (scraper.py:56) - `search_query = f"{topic} filter:media"`
+   - Twitter API filters at source to only return tweets with media (images/videos)
+   - Constructs Apify actor run input with modified search query
    - Executes actor via `ApifyClient`
-   - Fetches results from default dataset
-   - **Filters out retweets** (scraper.py:62-65) - only processes original content
-   - **Extracts media URLs** from tweets (scraper.py:72-92):
+   - Fetches results from default dataset (all results guaranteed to have media)
+   - **Filters out retweets** (scraper.py:110-112) - only processes original content
+   - **Extracts media URLs** from tweets (scraper.py:119-139):
      - Checks `media` field for media items with type and URL
      - Falls back to `images` field if `media` is not available
      - Stores media data with type and URL in array
@@ -471,6 +492,7 @@ success = generator.generate_single_variant(
 3. **Output**:
    - Console display (top N tweets per topic) with media URLs shown
    - JSON file: `trending_tweets_YYYYMMDD_HHMMSS.json`
+   - All tweets have media (no empty media arrays)
 
 **Media Description Workflow:**
 
@@ -513,8 +535,8 @@ success = generator.generate_single_variant(
 **Slack Hook Selection Workflow:**
 
 1. **Input**: JSON file with hooks (from hook_creation.py)
-2. **Processing** (slack_integration.py:100-370):
-   - **Send to Slack** (slack_integration.py:100-155):
+2. **Processing** (slack_integration.py:100-450):
+   - **Send to Slack** (slack_integration.py:65-136):
      - Groups tweets by topic/query for organized presentation
      - Sends topic header message with tweet count
      - For each tweet, creates Block Kit formatted message including:
@@ -523,19 +545,26 @@ success = generator.generate_single_variant(
        - Media items with descriptions
        - All 10 hooks numbered 1-10
      - Stores message thread timestamps for polling
-     - Adds context instruction: "Reply with 3 numbers (e.g., '1, 5, 9')"
-   - **Poll for selections** (slack_integration.py:157-230):
+     - **NEW: Adds dual instructions** (slack_integration.py:267):
+       - "Reply with 3 numbers (e.g., '1, 5, 9') to select hooks"
+       - "Reply with 'skip' or 'cancel' to exclude this tweet"
+   - **Poll for selections and exclusions** (slack_integration.py:276-345):
      - Monitors each thread for user replies (default: check every 10 seconds)
-     - Parses user text for hook numbers using regex
+     - **NEW: Parses skip keywords** (slack_integration.py:347-352): "skip", "cancel", "off brand", "pass", "no"
+     - Returns "SKIP" for exclusion keywords, hook numbers for selections
      - Validates selections (exactly 3 numbers, within hook range)
-     - Continues until all tweets have selections or timeout (default: 1 hour)
-   - **Save selections** (slack_integration.py:232-260):
-     - Adds `selected_hooks` array with the 3 chosen hook texts
-     - Adds `selected_hook_indices` array with the original numbers (1-indexed)
-     - Adds `selection_timestamp` with ISO format timestamp
+     - Tracks both selections and excluded tweets separately
+     - Continues until all tweets have responses or timeout (default: 1 hour)
+   - **Save selections and exclusions** (slack_integration.py:376-414):
+     - For selected tweets: adds `selected_hooks`, `selected_hook_indices`, `selection_timestamp`, `excluded: false`
+     - **NEW: For excluded tweets** (slack_integration.py:401-407):
+       - Adds `excluded: true`
+       - Adds `excluded_reason: "off_brand_or_cancelled"`
+       - Adds `excluded_timestamp` with ISO format
+       - Sets `selected_hooks: []` (empty array)
 3. **Output**:
    - New JSON file: `[original_name]_selected.json`
-   - Same structure as input but with added selection metadata in each tweet
+   - Same structure as input but with added selection metadata OR exclusion flags in each tweet
 
 **Video Generation Setup Workflow:**
 

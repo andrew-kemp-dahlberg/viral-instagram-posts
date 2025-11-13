@@ -671,6 +671,11 @@ class PipelineOrchestrator:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
             for tweet_idx, tweet in enumerate(tqdm(tweets, desc="Processing tweets")):
+                # Skip excluded tweets (marked as off-brand/cancelled in Slack)
+                if tweet.get("excluded", False):
+                    self.logger.info(f"Tweet {tweet_idx} marked as excluded, skipping video generation")
+                    continue
+
                 # Get media with local path
                 media_items = tweet.get("media", [])
                 if not media_items:
@@ -889,6 +894,8 @@ class PipelineOrchestrator:
                 tweets = json.load(f)
 
             total_tweets = len(tweets)
+            excluded_tweets = sum(1 for tweet in tweets if tweet.get("excluded", False))
+            active_tweets = total_tweets - excluded_tweets
             total_media = sum(len(tweet.get("media", [])) for tweet in tweets)
             downloaded_media = sum(
                 1 for tweet in tweets
@@ -910,10 +917,12 @@ class PipelineOrchestrator:
             self.logger.info("")
             self.logger.info("Statistics:")
             self.logger.info(f"  Total tweets processed: {total_tweets}")
+            self.logger.info(f"  Excluded tweets (off-brand): {excluded_tweets}")
+            self.logger.info(f"  Active tweets: {active_tweets}")
             self.logger.info(f"  Total media items: {total_media}")
             self.logger.info(f"  Media files downloaded: {downloaded_media}")
             self.logger.info(f"  Hooks generated: {total_tweets * 10}")
-            self.logger.info(f"  Hooks selected: {total_tweets * 3}")
+            self.logger.info(f"  Hooks selected: {active_tweets * 3}")
             self.logger.info(f"  Videos generated: {successful_videos}/{generated_videos}")
             self.logger.info("")
             self.logger.info(f"Final output: {final_output}")

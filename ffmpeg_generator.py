@@ -83,6 +83,8 @@ class FFmpegGenerator:
         # Position settings
         self.hook_text_y = self.config['positions']['hook_text']['y']
         self.hook_text_max_width = self.config['positions']['hook_text']['max_width']
+        self.tweet_box_x = self.config['positions']['tweet_box']['x']
+        self.tweet_box_y = self.config['positions']['tweet_box']['y']
 
         # Tweet box paths
         self.tweet_boxes = self.config['assets']['tweet_boxes']
@@ -382,31 +384,36 @@ class FFmpegGenerator:
             input_args.extend(['-loop', '1', '-i', tweet_box_path])
 
         # Build filter_complex chain
-        # This replicates the CapCut workflow in a single pass
+        # Layer order: blurred background -> clear image -> tweet box -> text
+
+        # Calculate tweet box position
+        tweet_box_x_pos = "(W-w)/2" if self.tweet_box_x == "center" else str(self.tweet_box_x)
+        tweet_box_y_pos = "(H-h)/2" if self.tweet_box_y == "center" else str(self.tweet_box_y)
+
         filter_complex = (
             # Step 1: Create blurred background (scale to fill, then blur)
             f"[0:v]scale={self.video_width}:{self.video_height}:"
             f"force_original_aspect_ratio=increase,"
             f"crop={self.video_width}:{self.video_height}[bg];"
 
-            # Step 2: Apply Gaussian blur to background
+            # Step 2: Apply extreme Gaussian blur to background
             f"[bg]gblur=sigma={self.blur_sigma}[blurred];"
 
-            # Step 3: Scale main media to fit within bounds
+            # Step 3: Scale main media to fit within bounds (for clear overlay)
             f"[0:v]scale={media_max_width}:{media_max_height}:"
             f"force_original_aspect_ratio=decrease[media];"
 
-            # Step 4: Overlay media on blurred background (centered)
-            f"[blurred][media]overlay=(W-w)/2:(H-h)/2[with_media];"
+            # Step 4: Overlay clear (non-blurred) media on blurred background (centered)
+            f"[blurred][media]overlay=(W-w)/2:(H-h)/2[with_clear_media];"
 
-            # Step 5: Apply sharpening (unsharp: 11:11:1.5)
-            f"[with_media]unsharp=11:11:1.5[sharpened];"
+            # Step 5: Apply sharpening to the clear media (unsharp: 11:11:1.5)
+            f"[with_clear_media]unsharp=11:11:1.5[sharpened];"
 
             # Step 6: Apply clarity (eq: brightness=0.02:contrast=1.2)
             f"[sharpened]eq=brightness=0.02:contrast=1.2[enhanced];"
 
-            # Step 7: Overlay tweet box (centered)
-            f"[enhanced][1:v]overlay=(W-w)/2:(H-h)/2[with_box];"
+            # Step 7: Overlay tweet box at configured position
+            f"[enhanced][1:v]overlay={tweet_box_x_pos}:{tweet_box_y_pos}[with_box];"
 
             # Step 8: Add hook text overlay
         )
