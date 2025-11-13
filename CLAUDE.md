@@ -340,7 +340,8 @@ success = generator.generate_single_variant(
   - `_run_ffmpeg_command()`: Executes FFmpeg with progress tracking
 - Key features:
   - **Single-pass processing**: All effects in one filter_complex for efficiency
-  - **Auto-detection**: Detects media type and adjusts parameters (adds -loop for images)
+  - **Auto-detection**: Detects media type and adjusts parameters (adds -loop and duration for images)
+  - **Configurable timing**: Image duration controlled by video_config.json timing.media_duration (default: 5 seconds for Instagram Reels)
   - **Smart tweet box selection**: Counts newlines in hook text (0=1-liner, 1=2-liner, 2=3-liner)
   - **Cross-platform fonts**: Searches system font directories on macOS/Linux/Windows
   - **Text escaping**: Properly escapes quotes, colons, backslashes for FFmpeg drawtext
@@ -625,6 +626,15 @@ The scraper handles multiple field naming conventions from different Twitter API
 **Engagement Scoring** (scraper.py:113-117)
 Weighted formula prioritizes retweets (2x multiplier) as strongest signal of viral content.
 
+**Image Video Duration Control** (ffmpeg_generator.py:366-382)
+Ensures static images generate reel-length videos (5 seconds) instead of infinite loops:
+- Reads `media_duration` from video_config.json timing section (default: 5.0 seconds)
+- Applies duration limit (`-t`) to both the image input AND the tweet box PNG overlay
+- Critical fix: Previously, only the image had a duration limit while the tweet box PNG looped infinitely, causing multi-hour videos (e.g., 9,904 seconds)
+- For images: Both inputs get `-loop 1 -t 5.0` parameters
+- For videos: Tweet box PNG loops without duration limit (trimmed by `-shortest` flag)
+- Prevents accidental generation of massive file sizes (390 MB → 1.6 MB after fix)
+
 ## Configuration
 
 ### Orchestrator Configuration
@@ -703,6 +713,11 @@ Edit `video_config.json` to customize video generation settings:
 - `hook_text.y`: Vertical position of hook text in pixels (default: 150)
 - `hook_text.max_width`: Maximum width for text wrapping (default: 1900)
 - `tweet_box.x/y`: Position of tweet overlay ("center" or pixel value)
+
+**Timing** (video_config.json:86-90):
+- `media_duration`: Duration in seconds for static images converted to video (default: 5.0 for Instagram Reels)
+- `fade_in_duration`: Fade in effect duration (default: 0.3)
+- `fade_out_duration`: Fade out effect duration (default: 0.3)
 
 **Processing** (video_config.json:78-84):
 - `parallel_workers`: Number of videos to generate concurrently (default: 4)

@@ -45,9 +45,6 @@ class FFmpegGenerator:
     IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
     VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.webm', '.m4v'}
 
-    # Image duration when converting static images to video
-    IMAGE_DURATION = 10.0  # seconds
-
     def __init__(self, config_path: str = 'video_config.json'):
         """
         Initialize FFmpegGenerator with configuration.
@@ -93,8 +90,12 @@ class FFmpegGenerator:
         # Font settings
         self.font_config = self.config['assets']['fonts']['hook_text']
 
+        # Timing settings - use media_duration for Instagram Reels
+        self.image_duration = self.config['timing']['media_duration']
+
         self.logger.info("FFmpegGenerator initialized successfully")
         self.logger.info(f"Output resolution: {self.video_width}x{self.video_height} @ {self.framerate}fps")
+        self.logger.info(f"Image duration for reels: {self.image_duration}s")
 
     def _setup_logging(self):
         """Configure logging to file and console."""
@@ -366,14 +367,19 @@ class FFmpegGenerator:
         if media_type == 'image':
             input_args.extend([
                 '-loop', '1',
-                '-t', str(self.IMAGE_DURATION),
+                '-t', str(self.image_duration),
                 '-i', media_path
             ])
         else:
             input_args.extend(['-i', media_path])
 
-        # Input 1: Tweet box PNG
-        input_args.extend(['-loop', '1', '-i', tweet_box_path])
+        # Input 1: Tweet box PNG (CRITICAL: must have same duration limit as image to prevent infinite loop)
+        if media_type == 'image':
+            # For images, limit tweet box duration to match media duration for Instagram Reels
+            input_args.extend(['-loop', '1', '-t', str(self.image_duration), '-i', tweet_box_path])
+        else:
+            # For videos, loop tweet box to match video length (will be trimmed by -shortest)
+            input_args.extend(['-loop', '1', '-i', tweet_box_path])
 
         # Build filter_complex chain
         # This replicates the CapCut workflow in a single pass
