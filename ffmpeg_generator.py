@@ -427,9 +427,9 @@ class FFmpegGenerator:
             f"fontsize=72:"
             f"fontcolor=black:"
             f"x=(w-text_w)/2:"
-            f"y={self.hook_text_y}:"
-            f"line_spacing=10[final]"
+            f"y={self.hook_text_y}"
         )
+        drawtext_filter += "[final]"
 
         # Append drawtext to filter_complex
         filter_complex += drawtext_filter
