@@ -73,9 +73,9 @@
     },
     "tweet_box": {
       "x": "center",
-      "y": 600,
-      "scale": 0.75,
-      "comment": "Tweet box positioned higher and scaled to 75% to prevent cutoff"
+      "y": -200,
+      "scale": 0.70,
+      "comment": "Tweet box positioned higher and scaled to 70% to prevent cutoff"
     },
     "media_overlay": {
       "x": "center",
